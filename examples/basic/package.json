@@ -1,0 +1,17 @@
+{
+  "name": "platform-elysia-example-basic",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "bun run src/main.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "elysia": "^1.0.0",
+    "@elysiajs/cors": "^1.0.0",
+    "platform-elysia": "file:../..",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0"
+  }
+}

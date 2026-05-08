@@ -14,7 +14,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format --write",
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:e2e": "bun test test/e2e",
+    "check": "bun run lint && bun run typecheck && bun run test",
+    "prepublishOnly": "bun run check && bun run build",
     "example:basic": "cd examples/basic && bun run src/main.ts"
   },
   "dependencies": {
@@ -36,10 +43,12 @@
     }
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@biomejs/biome": "2.4.14",
+    "@elysiajs/cors": "^1.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
-    "@elysiajs/cors": "^1.0.0",
+    "@nestjs/testing": "^11.1.19",
+    "@types/bun": "latest",
     "elysia": "^1.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",

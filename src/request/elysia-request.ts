@@ -1,12 +1,5 @@
 import type { Context } from 'elysia';
 
-/**
- * Express/Fastify-style request wrapper around Elysia's `Context`.
- *
- * Exposes the parsed body/query/params/headers Nest expects, plus
- * Express conveniences like `.get(name)`, `.originalUrl`, `.hostname`,
- * and an escape hatch (`.elysia`) for users that want the full Context.
- */
 export class ElysiaRequest {
   public readonly elysia: Context;
   public readonly raw: Request;
@@ -81,8 +74,7 @@ export class ElysiaRequest {
   }
 
   public get(name: string): string | undefined {
-    const value = this.headers[name.toLowerCase()];
-    return value;
+    return this.headers[name.toLowerCase()];
   }
 
   public header(name: string): string | undefined {

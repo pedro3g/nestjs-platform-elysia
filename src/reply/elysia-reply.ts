@@ -2,16 +2,6 @@ import type { Context } from 'elysia';
 
 type HeaderValue = string | string[] | number;
 
-/**
- * A mutable, Express/Fastify-style response wrapper around Elysia's `Context`.
- *
- * NestJS's adapter contract assumes a mutable response object with
- * `.send()`, `.status()`, `.header()` etc. Elysia's handlers are
- * return-based: `(ctx) => body`. This class buffers status, headers,
- * and body so that Nest can mutate as usual, and `_toResponse()` is
- * called by the adapter at the end of the route to produce the final
- * value Elysia serializes (or a `Response` for streams/redirects/files).
- */
 export class ElysiaReply {
   public readonly elysia: Context;
   public readonly raw: Request;
@@ -50,8 +40,11 @@ export class ElysiaReply {
   }
 
   public header(name: string, value: HeaderValue): this {
-    (this.elysia.set.headers as Record<string, HeaderValue>)[name.toLowerCase()] =
-      Array.isArray(value) ? value.join(', ') : String(value);
+    (this.elysia.set.headers as Record<string, HeaderValue>)[name.toLowerCase()] = Array.isArray(
+      value,
+    )
+      ? value.join(', ')
+      : String(value);
     return this;
   }
 
@@ -132,11 +125,6 @@ export class ElysiaReply {
     return this;
   }
 
-  /**
-   * Internal: produce the final value to return from the Elysia handler.
-   * Elysia knows how to serialize plain objects/strings/streams; for
-   * redirects we return a real Response so headers + status survive.
-   */
   public _toResponse(): unknown {
     if (this._redirect) {
       return new Response(null, {
@@ -147,7 +135,7 @@ export class ElysiaReply {
     if (this._stream) {
       return new Response(this._stream, {
         status: this._statusCode,
-        headers: this.elysia.set.headers as HeadersInit,
+        headers: this.elysia.set.headers as Record<string, string>,
       });
     }
     return this._body;
