@@ -115,6 +115,46 @@ app.useBodyParser(
 
 The parser receives the raw `Buffer` and returns the parsed value Elysia exposes as `ctx.body` (and Nest exposes via `@Body()`).
 
+## WebSocket gateways
+
+`@WebSocketGateway()` is bridged through `ElysiaWsAdapter`, which runs WebSockets on the **same Bun server** as your HTTP routes (no second port). Install the optional Nest peer dep:
+
+```bash
+bun add @nestjs/websockets
+```
+
+Wire the adapter before `app.listen`:
+
+```ts
+import { NestFactory } from '@nestjs/core';
+import { ElysiaAdapter, ElysiaWsAdapter, type NestElysiaApplication } from 'platform-elysia';
+
+const app = await NestFactory.create<NestElysiaApplication>(AppModule, new ElysiaAdapter());
+app.useWebSocketAdapter(new ElysiaWsAdapter(app));
+await app.listen(3000);
+```
+
+Then write standard NestJS gateways:
+
+```ts
+import { MessageBody, SubscribeMessage, WebSocketGateway } from '@nestjs/websockets';
+
+@WebSocketGateway({ path: '/events' })
+export class EventsGateway {
+  @SubscribeMessage('echo')
+  echo(@MessageBody() data: { value: string }) {
+    return { received: data.value };
+  }
+
+  @SubscribeMessage('compute')
+  compute(@MessageBody() data: { a: number; b: number }) {
+    return { event: 'computed', data: { sum: data.a + data.b } };
+  }
+}
+```
+
+Wire format follows Nest's convention: clients send `{"event": "<name>", "data": <payload>}` and receive the same envelope back. If the handler returns a `{ event, data }` object the explicit event name is preserved; otherwise the inbound event is reused.
+
 ## Trust proxy
 
 When the app sits behind a reverse proxy (Cloudflare, ALB, nginx, Caddy), enable `trustProxy` so `request.ip`, `request.hostname` and `request.protocol` honor `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` (with `X-Real-IP` as a fallback for the IP):
@@ -182,7 +222,6 @@ test('GET /users', async () => {
 
 ## Known limitations
 
-- **WebSockets** — `@WebSocketGateway()` is not bridged. Workaround: `app.register(elysiaWs)` directly.
 - **`useStaticAssets()`** — not implemented. Use `app.register(staticPlugin())` from `@elysiajs/static`.
 - **`setViewEngine()`** — not implemented (no SSR templating support).
 - **`@Req()` / `@Res()`** — receive `ElysiaRequest` / `ElysiaReply` wrappers, not Express request/response. Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed.

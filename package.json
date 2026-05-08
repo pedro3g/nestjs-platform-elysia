@@ -48,11 +48,19 @@
     "@nestjs/core": "^10.0.0 || ^11.0.0",
     "elysia": "^1.0.0",
     "@elysiajs/cors": "^1.0.0",
+    "@nestjs/websockets": "^10.0.0 || ^11.0.0",
+    "@nestjs/platform-ws": "^10.0.0 || ^11.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.0.0"
   },
   "peerDependenciesMeta": {
     "@elysiajs/cors": {
+      "optional": true
+    },
+    "@nestjs/websockets": {
+      "optional": true
+    },
+    "@nestjs/platform-ws": {
       "optional": true
     }
   },
@@ -61,11 +69,15 @@
     "@elysiajs/cors": "^1.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-ws": "^11.1.19",
     "@nestjs/testing": "^11.1.19",
+    "@nestjs/websockets": "^11.1.19",
     "@types/bun": "latest",
+    "@types/ws": "^8.18.1",
     "elysia": "^1.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "ws": "^8.20.0"
   }
 }

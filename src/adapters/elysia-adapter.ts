@@ -291,7 +291,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
 
   public override async close(): Promise<void> {
     try {
-      if (this.bunServer) await this.app.stop();
+      if (this.bunServer) await this.app.stop(true);
     } catch (err) {
       const message = (err as Error).message ?? '';
       if (!message.includes("isn't running")) {
