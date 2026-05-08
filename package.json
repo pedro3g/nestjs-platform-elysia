@@ -1,0 +1,48 @@
+{
+  "name": "platform-elysia",
+  "version": "0.1.0",
+  "description": "NestJS HTTP adapter for the Elysia web framework on Bun",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "src/index.ts",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build",
+    "example:basic": "cd examples/basic && bun run src/main.ts"
+  },
+  "dependencies": {
+    "path-to-regexp": "^8.2.0",
+    "tslib": "^2.7.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5",
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "elysia": "^1.0.0",
+    "@elysiajs/cors": "^1.0.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@elysiajs/cors": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@elysiajs/cors": "^1.0.0",
+    "elysia": "^1.0.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0",
+    "typescript": "^5"
+  }
+}
