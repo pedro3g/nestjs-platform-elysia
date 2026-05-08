@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Corrected `repository.url`, `bugs.url` and `homepage` in `package.json` to point to the actual GitHub repository (`pedro3g/nestjs-platform-elysia`).
 
+### Changed
+
+- Minimum Bun version bumped from `1.1.0` to `1.2.0` in `engines.bun`. Bun's lockfile format changed across 1.1 → 1.3 and `bun install --frozen-lockfile` rejects lockfiles produced by newer versions; pinning to `>=1.2.0` reflects what's actually testable in CI.
+- CI matrix simplified to `bun-version: latest` (the floor version is documented via `engines.bun`; running both didn't add value while the lockfile is incompatible).
+
 ## [0.1.0] - 2026-05-08
 
 Initial release.
@@ -47,4 +52,4 @@ Initial release.
 ### Runtime
 
 - **Bun-only.** Elysia uses `Bun.serve()` internally and does not run on Node.js. Adapter inherits this constraint.
-- Minimum Bun version: `1.1.0`.
+- Minimum Bun version: `1.2.0` (see 0.1.1 release notes — bumped from 1.1.0).
