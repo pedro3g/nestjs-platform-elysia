@@ -233,14 +233,32 @@ Pre-1.0. APIs may change between minor versions. See [CHANGELOG.md](./CHANGELOG.
 
 ## Releasing
 
-Releases are cut by pushing a `v*.*.*` tag — the GitHub Actions workflow at [.github/workflows/release.yml](./.github/workflows/release.yml) takes over from there:
+Releases are cut by pushing a `v*.*.*` tag — the GitHub Actions workflow at [.github/workflows/release.yml](./.github/workflows/release.yml) takes over from there.
+
+### One-time setup — npm Trusted Publishing
+
+This package publishes via npm's [Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC). No long-lived `NPM_TOKEN` is stored anywhere; GitHub Actions exchanges a short-lived OIDC token for a per-publish credential. Releases also carry a [provenance attestation](https://docs.npmjs.com/generating-provenance-statements) so consumers can verify they came from this exact workflow.
+
+Configure it once on npm:
+
+1. Go to `https://www.npmjs.com/package/nestjs-platform-elysia/access` (or the package's settings page).
+2. Under **Trusted Publishers**, click **Add Publisher** and fill in:
+   - Publisher: **GitHub Actions**
+   - Repository owner: `<your-github-user-or-org>`
+   - Repository name: `nestjs-platform-elysia`
+   - Workflow filename: `release.yml`
+   - Environment: leave blank (or set if you scope publishes to a GitHub Environment)
+
+That's it — no GitHub secret needed.
+
+### Cutting a release
 
 1. Bump the version: `bun pm version patch` (or `minor` / `major`).
 2. Move `[Unreleased]` notes into the new version's section in [CHANGELOG.md](./CHANGELOG.md).
 3. Commit and tag: `git commit -am "chore: release v0.x.y"` then `git tag v0.x.y`.
 4. Push: `git push && git push --tags`.
 
-The workflow then runs the full `bun run check` chain (lint + typecheck + tests + build), verifies the git tag matches `package.json#version`, publishes to npm, and creates a GitHub Release with auto-generated notes. It expects a repository secret named `NPM_TOKEN` (npm "Automation" token, granted by your npm account on https://www.npmjs.com/settings/<user>/tokens).
+The workflow then runs the full `bun run check` chain (lint + typecheck + tests + build), verifies the git tag matches `package.json#version` (avoids the classic "tagged v0.2.0 but shipped v0.1.0" bug), publishes to npm via OIDC with provenance, and creates a GitHub Release with auto-generated notes.
 
 ## License
 

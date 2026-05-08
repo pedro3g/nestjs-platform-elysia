@@ -31,6 +31,11 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Setup Node (for npm publish + OIDC)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -51,10 +56,8 @@ jobs:
       - name: Build dist
         run: bun run build
 
-      - name: Publish to npm
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: bun publish --access public
+      - name: Publish to npm with provenance (Trusted Publishing / OIDC)
+        run: npm publish --provenance --access public
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
