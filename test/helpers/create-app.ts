@@ -1,4 +1,4 @@
-import type { INestApplication, LogLevel, Type } from '@nestjs/common';
+import type { LogLevel, Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ElysiaAdapter, type NestElysiaApplication } from '../../src';
 
@@ -26,10 +26,9 @@ export async function createApp(options: CreateAppOptions): Promise<NestElysiaAp
 }
 
 export async function inject(
-  app: INestApplication,
+  app: NestElysiaApplication,
   request: { method?: string; url: string; headers?: Record<string, string>; body?: unknown },
 ): Promise<Response> {
-  const adapter = app.getHttpAdapter() as ElysiaAdapter;
   const url = request.url.startsWith('http') ? request.url : `http://localhost${request.url}`;
   const init: RequestInit = {
     method: request.method ?? 'GET',
@@ -42,5 +41,5 @@ export async function inject(
       ...(request.headers ?? {}),
     };
   }
-  return adapter.inject(new Request(url, init));
+  return app.inject(new Request(url, init));
 }
