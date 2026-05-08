@@ -13,7 +13,7 @@ This adapter lets you keep both: write Nest controllers as usual while still bei
 ## Installation
 
 ```bash
-bun add platform-elysia @nestjs/common @nestjs/core elysia
+bun add nestjs-platform-elysia @nestjs/common @nestjs/core elysia
 ```
 
 For CORS:
@@ -26,7 +26,7 @@ bun add @elysiajs/cors
 
 ```ts
 import { NestFactory } from '@nestjs/core';
-import { ElysiaAdapter, type NestElysiaApplication } from 'platform-elysia';
+import { ElysiaAdapter, type NestElysiaApplication } from 'nestjs-platform-elysia';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -50,7 +50,7 @@ bootstrap();
 ```ts
 import { Controller, Post, Body } from '@nestjs/common';
 import { t } from 'elysia';
-import { RouteSchema } from 'platform-elysia';
+import { RouteSchema } from 'nestjs-platform-elysia';
 
 @Controller('users')
 export class UsersController {
@@ -89,7 +89,7 @@ Then read it inside controllers / guards via `@Req()`:
 
 ```ts
 import { Controller, Post, Req } from '@nestjs/common';
-import type { ElysiaRequest } from 'platform-elysia';
+import type { ElysiaRequest } from 'nestjs-platform-elysia';
 
 @Controller('webhooks')
 export class WebhooksController {
@@ -127,7 +127,7 @@ Wire the adapter before `app.listen`:
 
 ```ts
 import { NestFactory } from '@nestjs/core';
-import { ElysiaAdapter, ElysiaWsAdapter, type NestElysiaApplication } from 'platform-elysia';
+import { ElysiaAdapter, ElysiaWsAdapter, type NestElysiaApplication } from 'nestjs-platform-elysia';
 
 const app = await NestFactory.create<NestElysiaApplication>(AppModule, new ElysiaAdapter());
 app.useWebSocketAdapter(new ElysiaWsAdapter(app));
@@ -190,7 +190,7 @@ Use `app.inject()` to dispatch a `Request` against the running app without bindi
 
 ```ts
 import { Test } from '@nestjs/testing';
-import { ElysiaAdapter, type NestElysiaApplication } from 'platform-elysia';
+import { ElysiaAdapter, type NestElysiaApplication } from 'nestjs-platform-elysia';
 
 let app: NestElysiaApplication;
 
@@ -230,6 +230,17 @@ test('GET /users', async () => {
 ## Versioning
 
 Pre-1.0. APIs may change between minor versions. See [CHANGELOG.md](./CHANGELOG.md).
+
+## Releasing
+
+Releases are cut by pushing a `v*.*.*` tag — the GitHub Actions workflow at [.github/workflows/release.yml](./.github/workflows/release.yml) takes over from there:
+
+1. Bump the version: `bun pm version patch` (or `minor` / `major`).
+2. Move `[Unreleased]` notes into the new version's section in [CHANGELOG.md](./CHANGELOG.md).
+3. Commit and tag: `git commit -am "chore: release v0.x.y"` then `git tag v0.x.y`.
+4. Push: `git push && git push --tags`.
+
+The workflow then runs the full `bun run check` chain (lint + typecheck + tests + build), verifies the git tag matches `package.json#version`, publishes to npm, and creates a GitHub Release with auto-generated notes. It expects a repository secret named `NPM_TOKEN` (npm "Automation" token, granted by your npm account on https://www.npmjs.com/settings/<user>/tokens).
 
 ## License
 

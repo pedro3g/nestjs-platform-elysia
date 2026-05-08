@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ElysiaAdapter, type NestElysiaApplication } from 'platform-elysia';
+import { ElysiaAdapter, type NestElysiaApplication } from 'nestjs-platform-elysia';
 import { AppModule } from './app.module';
 
 async function bootstrap() {

@@ -1,8 +1,20 @@
 {
-  "name": "platform-elysia",
+  "name": "nestjs-platform-elysia",
   "version": "0.1.0",
   "description": "NestJS HTTP adapter for the Elysia web framework on Bun",
   "license": "MIT",
+  "author": "Pedro Henrique",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/REPLACE_WITH_OWNER/nestjs-platform-elysia.git"
+  },
+  "bugs": {
+    "url": "https://github.com/REPLACE_WITH_OWNER/nestjs-platform-elysia/issues"
+  },
+  "homepage": "https://github.com/REPLACE_WITH_OWNER/nestjs-platform-elysia#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "src/index.ts",

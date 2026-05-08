@@ -10,7 +10,7 @@
     "@nestjs/core": "^11.0.0",
     "elysia": "^1.0.0",
     "@elysiajs/cors": "^1.0.0",
-    "platform-elysia": "file:../..",
+    "nestjs-platform-elysia": "file:../..",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0"
   }

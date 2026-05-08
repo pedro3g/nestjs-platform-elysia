@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { t } from 'elysia';
-import { RouteDetail, RouteSchema } from 'platform-elysia';
+import { RouteDetail, RouteSchema } from 'nestjs-platform-elysia';
 import { AuthGuard } from '../auth/auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { type Cat, CatsService } from './cats.service';
