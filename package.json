@@ -10,7 +10,19 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "keywords": [
+    "nestjs",
+    "elysia",
+    "bun",
+    "adapter",
+    "http",
+    "platform"
   ],
   "scripts": {
     "clean": "rm -rf dist",
