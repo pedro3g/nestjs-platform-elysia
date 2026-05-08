@@ -40,11 +40,13 @@ export class ElysiaReply {
   }
 
   public header(name: string, value: HeaderValue): this {
-    (this.elysia.set.headers as Record<string, HeaderValue>)[name.toLowerCase()] = Array.isArray(
-      value,
-    )
-      ? value.join(', ')
-      : String(value);
+    const key = name.toLowerCase();
+    const headers = this.headerStore;
+    if (key === 'set-cookie') {
+      headers[key] = Array.isArray(value) ? value.map(String) : String(value);
+      return this;
+    }
+    headers[key] = Array.isArray(value) ? value.map(String).join(', ') : String(value);
     return this;
   }
 
@@ -52,13 +54,12 @@ export class ElysiaReply {
     return this.header(name, value);
   }
 
-  public getHeader(name: string): string | undefined {
-    const headers = this.elysia.set.headers as Record<string, string>;
-    return headers[name.toLowerCase()];
+  public getHeader(name: string): string | string[] | undefined {
+    return this.headerStore[name.toLowerCase()];
   }
 
-  public getHeaders(): Record<string, string> {
-    return { ...(this.elysia.set.headers as Record<string, string>) };
+  public getHeaders(): Record<string, string | string[]> {
+    return { ...this.headerStore };
   }
 
   public hasHeader(name: string): boolean {
@@ -66,18 +67,36 @@ export class ElysiaReply {
   }
 
   public removeHeader(name: string): this {
-    const headers = this.elysia.set.headers as Record<string, string>;
-    delete headers[name.toLowerCase()];
+    delete this.headerStore[name.toLowerCase()];
     return this;
   }
 
   public appendHeader(name: string, value: HeaderValue): this {
     const key = name.toLowerCase();
-    const headers = this.elysia.set.headers as Record<string, string>;
+    const headers = this.headerStore;
     const existing = headers[key];
-    const next = Array.isArray(value) ? value.join(', ') : String(value);
-    headers[key] = existing ? `${existing}, ${next}` : next;
+    const incoming = Array.isArray(value) ? value.map(String) : [String(value)];
+
+    if (key === 'set-cookie') {
+      const current = existing === undefined ? [] : Array.isArray(existing) ? existing : [existing];
+      const merged = [...current, ...incoming];
+      headers[key] = merged.length === 1 ? merged[0]! : merged;
+      return this;
+    }
+
+    const next = incoming.join(', ');
+    if (existing === undefined) {
+      headers[key] = next;
+    } else if (Array.isArray(existing)) {
+      headers[key] = [...existing, next];
+    } else {
+      headers[key] = `${existing}, ${next}`;
+    }
     return this;
+  }
+
+  private get headerStore(): Record<string, string | string[]> {
+    return this.elysia.set.headers as Record<string, string | string[]>;
   }
 
   public type(contentType: string): this {

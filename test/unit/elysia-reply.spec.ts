@@ -34,11 +34,43 @@ describe('ElysiaReply', () => {
     expect((ctx.set.headers as Record<string, string>)['cache-control']).toBe('no-store');
   });
 
-  test('header() with array joins with comma', () => {
+  test('header() with array on combinable header joins with comma', () => {
     const ctx = createMockContext();
     const reply = new ElysiaReply(ctx);
-    reply.header('Set-Cookie', ['a=1', 'b=2']);
-    expect((ctx.set.headers as Record<string, string>)['set-cookie']).toBe('a=1, b=2');
+    reply.header('Vary', ['Origin', 'Accept']);
+    expect((ctx.set.headers as Record<string, string>).vary).toBe('Origin, Accept');
+  });
+
+  test('header() with array on Set-Cookie stays as array (multi-value)', () => {
+    const ctx = createMockContext();
+    const reply = new ElysiaReply(ctx);
+    reply.header('Set-Cookie', ['a=1; Path=/', 'b=2; Path=/']);
+    expect((ctx.set.headers as Record<string, string | string[]>)['set-cookie']).toEqual([
+      'a=1; Path=/',
+      'b=2; Path=/',
+    ]);
+  });
+
+  test('appendHeader() on Set-Cookie accumulates as array, never joins', () => {
+    const ctx = createMockContext();
+    const reply = new ElysiaReply(ctx);
+    reply.appendHeader('Set-Cookie', 'a=1; Path=/');
+    reply.appendHeader('Set-Cookie', 'b=2; Path=/');
+    reply.appendHeader('Set-Cookie', ['c=3; Path=/', 'd=4; Path=/']);
+    expect((ctx.set.headers as Record<string, string | string[]>)['set-cookie']).toEqual([
+      'a=1; Path=/',
+      'b=2; Path=/',
+      'c=3; Path=/',
+      'd=4; Path=/',
+    ]);
+  });
+
+  test('appendHeader() on combinable header keeps the comma-join behavior', () => {
+    const ctx = createMockContext();
+    const reply = new ElysiaReply(ctx);
+    reply.appendHeader('Cache-Control', 'no-store');
+    reply.appendHeader('Cache-Control', 'no-cache');
+    expect((ctx.set.headers as Record<string, string>)['cache-control']).toBe('no-store, no-cache');
   });
 
   test('getHeader / hasHeader / removeHeader / appendHeader', () => {

@@ -350,7 +350,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     return response.sent;
   }
 
-  public override getHeader(response: ElysiaReply, name: string): string | undefined {
+  public override getHeader(response: ElysiaReply, name: string): string | string[] | undefined {
     return response.getHeader(name);
   }
 

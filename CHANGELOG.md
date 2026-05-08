@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `trustProxy` option on `ElysiaAdapter` — accepts `true` (resolve to leftmost `X-Forwarded-For`) or a custom resolver `(forwardedFor: string[], directIp?: string) => string | undefined`. When enabled, `request.ip` honors `X-Forwarded-For` (with `X-Real-IP` as fallback), `request.hostname` honors `X-Forwarded-Host`, and `request.protocol` honors `X-Forwarded-Proto`. Default remains `false` (direct connection only).
 
+### Fixed
+
+- `Set-Cookie` is no longer comma-joined with prior values. `reply.header('Set-Cookie', [...])` and repeated `reply.appendHeader('Set-Cookie', ...)` now accumulate as an array so Bun emits separate `Set-Cookie` header lines (RFC 6265 — multiple cookies must be sent as distinct headers, not concatenated). Other combinable headers like `Vary` and `Cache-Control` keep the previous comma-join behavior.
+
+### Changed
+
+- `ElysiaReply.getHeader()` and the adapter's `getHeader(response, name)` now return `string | string[] | undefined` to surface multi-value Set-Cookie correctly. Callers that previously assumed `string` should narrow accordingly.
+
 ## [0.1.0] - 2026-05-08
 
 Initial release.
