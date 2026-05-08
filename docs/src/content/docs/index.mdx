@@ -1,0 +1,69 @@
+---
+title: nestjs-platform-elysia
+description: NestJS HTTP adapter for the Elysia web framework on Bun. Keep what makes both worth choosing.
+template: splash
+hero:
+  tagline: NestJS HTTP adapter on top of Elysia & Bun. DI, guards, pipes, interceptors, exception filters — plus TypeBox validation, lifecycle hooks, and the Elysia plugin ecosystem.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get Started
+      link: /nestjs-platform-elysia/guides/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/pedro3g/nestjs-platform-elysia
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why this exists
+
+NestJS gives you DI, modules, guards, pipes, interceptors, exception filters, and a clear architecture. Elysia gives you Bun-native performance, TypeBox validation at the framework level, lifecycle hooks, and a rich plugin ecosystem.
+
+This adapter lets you keep both: write Nest controllers as usual while still being able to register Elysia plugins, attach TypeBox schemas to routes, mount sub-apps, and use `app.handle()` for testing — without losing what makes Elysia worth choosing.
+
+<CardGrid>
+  <Card title="Full Nest pipeline" icon="puzzle">
+    Guards, pipes, interceptors and exception filters work end-to-end. Drop-in compatible with the `AbstractHttpAdapter` contract.
+  </Card>
+
+  <Card title="Bun-native" icon="rocket">
+    Runs on `Bun.serve()` via Elysia. No Node.js compatibility layer in between.
+  </Card>
+
+  <Card title="TypeBox / Zod at the route level" icon="approve-check">
+    `@RouteSchema` attaches an Elysia schema to a controller method. Invalid bodies return `422` before your controller ever runs.
+  </Card>
+
+  <Card title="Native WebSocket gateways" icon="rss">
+    `@WebSocketGateway()` is bridged to Elysia's `app.ws()` on the same Bun server. No second port, no `ws` library needed.
+  </Card>
+
+  <Card title="Trust proxy out of the box" icon="open-book">
+    Opt-in `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` resolution with a custom resolver hook.
+  </Card>
+
+  <Card title="Webhook-ready body parsing" icon="document">
+    `useBodyParser()` captures the raw request buffer onto `req.rawBody` for signature verification, and lets you register custom parsers per content-type.
+  </Card>
+</CardGrid>
+
+## Quick install
+
+```bash
+bun add nestjs-platform-elysia @nestjs/common @nestjs/core elysia
+```
+
+```ts
+import { NestFactory } from '@nestjs/core';
+import { ElysiaAdapter, type NestElysiaApplication } from 'nestjs-platform-elysia';
+import { AppModule } from './app.module';
+
+const app = await NestFactory.create<NestElysiaApplication>(AppModule, new ElysiaAdapter());
+await app.listen(3000);
+```
+
+Continue with the **[Getting Started](/nestjs-platform-elysia/guides/getting-started/)** guide.
