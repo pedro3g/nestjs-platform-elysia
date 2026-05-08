@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `trustProxy` option on `ElysiaAdapter` — accepts `true` (resolve to leftmost `X-Forwarded-For`) or a custom resolver `(forwardedFor: string[], directIp?: string) => string | undefined`. When enabled, `request.ip` honors `X-Forwarded-For` (with `X-Real-IP` as fallback), `request.hostname` honors `X-Forwarded-Host`, and `request.protocol` honors `X-Forwarded-Proto`. Default remains `false` (direct connection only).
+
 ## [0.1.0] - 2026-05-08
 
 Initial release.
@@ -33,7 +37,6 @@ Initial release.
 - `useStaticAssets()`, `setViewEngine()` not implemented (no SSR templating support)
 - `useBodyParser()` is a no-op; Elysia parses bodies automatically based on `content-type`
 - `@Req()` / `@Res()` deliver `ElysiaRequest` / `ElysiaReply` wrappers, not Express-shaped objects (Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed)
-- Trust proxy / `X-Forwarded-*` not honored — `request.ip` and `request.hostname` come from Bun's request directly
 - Microservices / hybrid app mode untested
 
 ### Runtime

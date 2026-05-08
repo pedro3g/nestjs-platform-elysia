@@ -15,7 +15,11 @@ import {
   ELYSIA_ROUTE_HOOK_METADATA,
   ELYSIA_ROUTE_SCHEMA_METADATA,
 } from '../constants';
-import type { ElysiaAdapterOptions } from '../interfaces/elysia-adapter-options.interface';
+import type {
+  ElysiaAdapterOptions,
+  TrustProxyOption,
+  TrustProxyResolver,
+} from '../interfaces/elysia-adapter-options.interface';
 import type { NestElysiaBodyParserOptions } from '../interfaces/nest-elysia-body-parser-options.interface';
 import { ElysiaReply } from '../reply/elysia-reply';
 import { ElysiaRequest } from '../request/elysia-request';
@@ -81,10 +85,28 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private errorHandler?: (err: unknown, req: ElysiaRequest, res: ElysiaReply) => unknown;
   private bunServer: { hostname: string; port: number; stop: () => void } | null = null;
   private readonly serverProxy = new HttpServerProxy();
+  private trustProxy?: TrustProxyResolver;
 
   constructor(instanceOrOptions?: ElysiaCtorArg) {
-    const elysia = ElysiaAdapter.resolveInstance(instanceOrOptions);
+    const isInstance =
+      !!instanceOrOptions &&
+      typeof instanceOrOptions === 'object' &&
+      'route' in instanceOrOptions &&
+      'handle' in instanceOrOptions;
+
+    let trustProxyOpt: TrustProxyOption | undefined;
+    let elysiaInput: ElysiaCtorArg = instanceOrOptions;
+
+    if (instanceOrOptions && typeof instanceOrOptions === 'object' && !isInstance) {
+      const { trustProxy, ...rest } = instanceOrOptions as ElysiaAdapterOptions;
+      trustProxyOpt = trustProxy;
+      elysiaInput = rest as ElysiaCtorArg;
+    }
+
+    const elysia = ElysiaAdapter.resolveInstance(elysiaInput);
     super(elysia);
+
+    this.trustProxy = ElysiaAdapter.resolveTrustProxy(trustProxyOpt);
   }
 
   private static resolveInstance(input?: ElysiaCtorArg): AnyElysiaInstance {
@@ -95,6 +117,16 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       opts?: ElysiaAdapterOptions,
     ) => AnyElysiaInstance;
     return new ElysiaCtor(input as ElysiaAdapterOptions | undefined);
+  }
+
+  private static resolveTrustProxy(opt?: TrustProxyOption): TrustProxyResolver | undefined {
+    if (opt === true) return (forwardedFor) => forwardedFor[0];
+    if (typeof opt === 'function') return opt;
+    return undefined;
+  }
+
+  private wrapRequest(ctx: ConstructorParameters<typeof ElysiaRequest>[0]): ElysiaRequest {
+    return new ElysiaRequest(ctx, { trustProxy: this.trustProxy });
   }
 
   private get app(): AnyElysiaInstance {
@@ -472,7 +504,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
 
   private makeRouteHandler(route: RouteEntry) {
     return async (ctx: unknown): Promise<unknown> => {
-      const req = new ElysiaRequest(ctx as ConstructorParameters<typeof ElysiaRequest>[0]);
+      const req = this.wrapRequest(ctx as ConstructorParameters<typeof ElysiaRequest>[0]);
       const reply = new ElysiaReply(ctx as ConstructorParameters<typeof ElysiaReply>[0]);
 
       const handler = this.pickHandler(route, req);
@@ -510,7 +542,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       const c = ctx as { error: unknown; code: string; request: Request; set: { status?: number } };
       if (c.code === 'NOT_FOUND' && this.notFoundHandler) {
         const elysiaCtx = c as unknown as ConstructorParameters<typeof ElysiaRequest>[0];
-        const req = new ElysiaRequest(elysiaCtx);
+        const req = this.wrapRequest(elysiaCtx);
         const reply = new ElysiaReply(elysiaCtx);
         await Promise.resolve(this.notFoundHandler(req, reply));
         return reply._toResponse();
@@ -520,7 +552,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       }
       if (this.errorHandler) {
         const elysiaCtx = c as unknown as ConstructorParameters<typeof ElysiaRequest>[0];
-        const req = new ElysiaRequest(elysiaCtx);
+        const req = this.wrapRequest(elysiaCtx);
         const reply = new ElysiaReply(elysiaCtx);
         await Promise.resolve(this.errorHandler(c.error, req, reply));
         return reply._toResponse();
@@ -541,7 +573,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       if (this.middlewares.length === 0) return undefined;
 
       const elysiaCtx = ctx as ConstructorParameters<typeof ElysiaRequest>[0];
-      const req = new ElysiaRequest(elysiaCtx);
+      const req = this.wrapRequest(elysiaCtx);
       const reply = new ElysiaReply(elysiaCtx);
       const path = req.path;
       const methodName = req.method.toUpperCase();
@@ -592,7 +624,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   public override setOnRequestHook(hook: (...args: any[]) => any): void {
     this.app.onRequest(async (ctx: unknown) => {
       const elysiaCtx = ctx as ConstructorParameters<typeof ElysiaRequest>[0];
-      const req = new ElysiaRequest(elysiaCtx);
+      const req = this.wrapRequest(elysiaCtx);
       const reply = new ElysiaReply(elysiaCtx);
       await Promise.resolve(hook(req, reply, () => {}));
     });
@@ -601,7 +633,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   public override setOnResponseHook(hook: (...args: any[]) => any): void {
     this.app.onResponse(async (ctx: unknown) => {
       const elysiaCtx = ctx as ConstructorParameters<typeof ElysiaRequest>[0];
-      const req = new ElysiaRequest(elysiaCtx);
+      const req = this.wrapRequest(elysiaCtx);
       const reply = new ElysiaReply(elysiaCtx);
       await Promise.resolve(hook(req, reply, () => {}));
     });

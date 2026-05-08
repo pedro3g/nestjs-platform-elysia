@@ -75,6 +75,22 @@ If the body doesn't match the schema, Elysia returns a `422` response with detai
 - `@RouteConfig({ tags, ... })` — arbitrary route config object
 - `@RouteDetail({ summary, description, tags, deprecated, hide })` — OpenAPI-style metadata (consumed by `@elysiajs/openapi` if registered)
 
+## Trust proxy
+
+When the app sits behind a reverse proxy (Cloudflare, ALB, nginx, Caddy), enable `trustProxy` so `request.ip`, `request.hostname` and `request.protocol` honor `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` (with `X-Real-IP` as a fallback for the IP):
+
+```ts
+new ElysiaAdapter({ trustProxy: true });
+
+new ElysiaAdapter({
+  trustProxy: (forwardedFor, directIp) => {
+    return forwardedFor[forwardedFor.length - 1];
+  },
+});
+```
+
+`true` resolves to the leftmost entry in `X-Forwarded-For`. Pass a function for custom logic — receives the parsed list and the direct connection IP, returns the resolved client IP (or `undefined` to fall back to direct).
+
 ## Application API
 
 `NestElysiaApplication` exposes adapter methods directly on the app instance through Nest's adapter Proxy:
@@ -132,7 +148,6 @@ test('GET /users', async () => {
 - **`useBodyParser()`** — currently a no-op; Elysia parses bodies automatically by `content-type`.
 - **`@Req()` / `@Res()`** — receive `ElysiaRequest` / `ElysiaReply` wrappers, not Express request/response. Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed.
 - **Microservices / hybrid app** — untested.
-- **Trust proxy** — `request.ip` and `request.hostname` come from Bun's request directly; `X-Forwarded-*` are not honored yet.
 
 ## Versioning
 

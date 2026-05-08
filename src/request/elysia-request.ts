@@ -1,13 +1,20 @@
 import type { Context } from 'elysia';
+import type { TrustProxyResolver } from '../interfaces/elysia-adapter-options.interface';
+
+export interface ElysiaRequestOptions {
+  trustProxy?: TrustProxyResolver;
+}
 
 export class ElysiaRequest {
   public readonly elysia: Context;
   public readonly raw: Request;
+  private readonly options: ElysiaRequestOptions;
   private _parsedUrl?: URL;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, options: ElysiaRequestOptions = {}) {
     this.elysia = ctx;
     this.raw = ctx.request;
+    this.options = options;
   }
 
   private get parsedUrl(): URL {
@@ -52,21 +59,32 @@ export class ElysiaRequest {
   }
 
   public get hostname(): string {
+    if (this.options.trustProxy) {
+      const forwardedHost = this.get('x-forwarded-host');
+      if (forwardedHost) return forwardedHost.split(',')[0]!.trim();
+    }
     return this.parsedUrl.hostname;
   }
 
   public get protocol(): string {
+    if (this.options.trustProxy) {
+      const forwardedProto = this.get('x-forwarded-proto');
+      if (forwardedProto) return forwardedProto.split(',')[0]!.trim();
+    }
     return this.parsedUrl.protocol.replace(':', '');
   }
 
   public get ip(): string | undefined {
-    const server = this.elysia.server;
-    if (!server) return undefined;
-    try {
-      return server.requestIP(this.raw)?.address;
-    } catch {
-      return undefined;
+    const directIp = this.directIp;
+    if (this.options.trustProxy) {
+      const forwardedFor = this.parseForwardedFor();
+      if (forwardedFor.length > 0) {
+        return this.options.trustProxy(forwardedFor, directIp);
+      }
+      const realIp = this.get('x-real-ip');
+      if (realIp) return realIp;
     }
+    return directIp;
   }
 
   public get cookies(): Record<string, unknown> {
@@ -79,5 +97,24 @@ export class ElysiaRequest {
 
   public header(name: string): string | undefined {
     return this.get(name);
+  }
+
+  private get directIp(): string | undefined {
+    const server = this.elysia.server;
+    if (!server) return undefined;
+    try {
+      return server.requestIP(this.raw)?.address;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseForwardedFor(): string[] {
+    const value = this.get('x-forwarded-for');
+    if (!value) return [];
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 }
