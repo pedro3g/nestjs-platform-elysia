@@ -7,45 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `ElysiaWsAdapter` bridges `@WebSocketGateway()` / `@SubscribeMessage()` onto the same Bun server as HTTP. `app.useWebSocketAdapter(new ElysiaWsAdapter(app))` registers Elysia `app.ws(path, ...)` routes per gateway, dispatching incoming `{event, data}` envelopes to the matching `@SubscribeMessage` handler. Handler results are wrapped back into the inbound envelope, or kept verbatim if the handler returns its own `{event, data}` shape. Works with Observable / Promise / sync return values via Nest's `transform` pipeline.
-- `trustProxy` option on `ElysiaAdapter` — accepts `true` (resolve to leftmost `X-Forwarded-For`) or a custom resolver `(forwardedFor: string[], directIp?: string) => string | undefined`. When enabled, `request.ip` honors `X-Forwarded-For` (with `X-Real-IP` as fallback), `request.hostname` honors `X-Forwarded-Host`, and `request.protocol` honors `X-Forwarded-Proto`. Default remains `false` (direct connection only).
-- `useBodyParser()` is no longer a no-op. Combined with `NestApplicationOptions.rawBody: true`, it captures the raw body buffer onto `request.rawBody` for parsed requests (use `@Req() req: ElysiaRequest` and read `req.rawBody`). Calling `useBodyParser(type)` once or more narrows the capture to the listed content-types. Passing a `parser` (4th arg, per Nest's forwarding convention) registers a custom Elysia `onParse` handler for unrecognized content-types — receives `{ request, contentType, rawBody }` and returns the parsed value.
-
-### Fixed
-
-- `Set-Cookie` is no longer comma-joined with prior values. `reply.header('Set-Cookie', [...])` and repeated `reply.appendHeader('Set-Cookie', ...)` now accumulate as an array so Bun emits separate `Set-Cookie` header lines (RFC 6265 — multiple cookies must be sent as distinct headers, not concatenated). Other combinable headers like `Vary` and `Cache-Control` keep the previous comma-join behavior.
-
-### Changed
-
-- `ElysiaReply.getHeader()` and the adapter's `getHeader(response, name)` now return `string | string[] | undefined` to surface multi-value Set-Cookie correctly. Callers that previously assumed `string` should narrow accordingly.
-
 ## [0.1.0] - 2026-05-08
 
 Initial release.
 
 ### Added
 
-- `ElysiaAdapter` extending Nest's `AbstractHttpAdapter` — full Nest pipeline (DI, modules, guards, pipes, interceptors, exception filters) on top of Elysia / Bun.serve
-- `NestElysiaApplication` interface exposing `inject()`, `register()`, `mount()`, `enableCors()` directly on the app via Nest's adapter `Proxy` (works through both `NestFactory.create` and `Test.createTestingModule`)
+- `ElysiaAdapter` extending Nest's `AbstractHttpAdapter` — full Nest pipeline (DI, modules, guards, pipes, interceptors, exception filters) on top of Elysia / Bun.serve.
+- `NestElysiaApplication` interface exposing `inject()`, `register()`, `mount()`, `enableCors()` directly on the app via Nest's adapter `Proxy` (works through both `NestFactory.create` and `Test.createTestingModule`).
+- `ElysiaWsAdapter` bridges `@WebSocketGateway()` / `@SubscribeMessage()` onto the same Bun server as HTTP. `app.useWebSocketAdapter(new ElysiaWsAdapter(app))` registers Elysia `app.ws(path, ...)` routes per gateway, dispatching `{event, data}` envelopes to the matching `@SubscribeMessage` handler. Handler return values are wrapped back into the inbound envelope, or kept verbatim if the handler returns its own `{event, data}` shape. Works with Observable / Promise / sync values via Nest's `transform` pipeline.
 - Route metadata decorators forwarded to Elysia's per-route `localHook`:
-  - `@RouteSchema` for TypeBox / Zod validation at the framework level (returns `422` before the controller runs)
-  - `@RouteHook` for Elysia lifecycle hooks per route (`parse`, `transform`, `beforeHandle`, `afterHandle`, `afterResponse`, `mapResponse`, `error`)
-  - `@RouteConfig` for arbitrary Elysia route config
-  - `@RouteDetail` for OpenAPI-style metadata (consumed by `@elysiajs/openapi` if registered)
-- HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`, `HEAD`, `ALL` + WebDAV verbs (`PROPFIND`, `PROPPATCH`, `MKCOL`, `COPY`, `MOVE`, `LOCK`, `UNLOCK`, `SEARCH`)
-- Versioning: `URI`, `Header`, `Media-Type`, `Custom` — backed by a per-route dispatch table that picks the matching handler at request time
-- CORS via `@elysiajs/cors` (optional peer dep, lazy-loaded when `enableCors()` is called)
-- `MiddlewareConsumer.apply().forRoutes()` Express-style middleware wired through Elysia's global `onBeforeHandle` hook with path matching via `path-to-regexp`
-- Error bridge: `HttpException` and userland errors flow through Nest's exception filter; Elysia native error codes (`VALIDATION`, `PARSE`, `INVALID_COOKIE_SIGNATURE`, `INVALID_FILE_TYPE`) are handled by Elysia (e.g. validation stays `422`, never wrapped as `500`)
-- Test suite: 89 tests / 177 assertions covering unit (reply/request wrappers, version-utils dispatch, path-utils matcher) and e2e (routes, guards/pipes/interceptors, schema validation, error handling, versioning, CORS, middleware, public API surface)
+  - `@RouteSchema` for TypeBox / Zod validation at the framework level (returns `422` before the controller runs).
+  - `@RouteHook` for Elysia lifecycle hooks per route (`parse`, `transform`, `beforeHandle`, `afterHandle`, `afterResponse`, `mapResponse`, `error`).
+  - `@RouteConfig` for arbitrary Elysia route config.
+  - `@RouteDetail` for OpenAPI-style metadata (consumed by `@elysiajs/openapi` if registered).
+- `trustProxy` option on `ElysiaAdapter` — accepts `true` (resolve to leftmost `X-Forwarded-For`) or a custom resolver `(forwardedFor, directIp) => string | undefined`. Honors `X-Forwarded-For` (with `X-Real-IP` fallback) on `request.ip`, `X-Forwarded-Host` on `request.hostname`, `X-Forwarded-Proto` on `request.protocol`. Default `false`.
+- `useBodyParser()` actually parses now. Combined with `NestApplicationOptions.rawBody: true` it captures the raw body buffer onto `request.rawBody` for parsed requests; calling `useBodyParser(type)` once or more narrows capture to the listed content-types. Passing a `parser` (3rd user-facing arg) registers a custom Elysia `onParse` handler — receives `{ request, contentType, rawBody }` and returns the parsed value.
+- HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`, `HEAD`, `ALL` + WebDAV verbs (`PROPFIND`, `PROPPATCH`, `MKCOL`, `COPY`, `MOVE`, `LOCK`, `UNLOCK`, `SEARCH`).
+- Versioning: `URI`, `Header`, `Media-Type`, `Custom` — backed by a per-route dispatch table that picks the matching handler at request time.
+- CORS via `@elysiajs/cors` (optional peer dep, lazy-loaded when `enableCors()` is called).
+- `MiddlewareConsumer.apply().forRoutes()` Express-style middleware wired through Elysia's global `onBeforeHandle` hook with path matching via `path-to-regexp`.
+- Error bridge: `HttpException` and userland errors flow through Nest's exception filter; Elysia native error codes (`VALIDATION`, `PARSE`, `INVALID_COOKIE_SIGNATURE`, `INVALID_FILE_TYPE`) are handled by Elysia (e.g. validation stays `422`, never wrapped as `500`).
+- `Set-Cookie` emitted as separate header lines per RFC 6265: `reply.header('Set-Cookie', [...])` and repeated `reply.appendHeader('Set-Cookie', ...)` accumulate as an array so Bun produces distinct `Set-Cookie` headers instead of comma-joining. Other combinable headers (`Vary`, `Cache-Control`, ...) keep the comma-join behavior.
+- `StreamableFile` returns from controllers stream through `ElysiaReply.stream()` with `content-type` / `content-disposition` / `content-length` sourced from the `StreamableFile` options.
+- Test suite: 119 tests / 238 assertions across unit (reply/request wrappers, version-utils dispatch, path-utils matcher) and e2e (routes, guards / pipes / interceptors, `@RouteSchema` validation, error handling, versioning, CORS, middleware, trust proxy, body parsing, streaming + multi-value cookies, public API surface, WebSocket gateways).
 
 ### Known Limitations
 
-- `useStaticAssets()`, `setViewEngine()` not implemented (no SSR templating support)
-- `@Req()` / `@Res()` deliver `ElysiaRequest` / `ElysiaReply` wrappers, not Express-shaped objects (Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed)
-- Microservices / hybrid app mode untested
+- `useStaticAssets()`, `setViewEngine()` not implemented (no SSR templating support — register `@elysiajs/static` directly via `app.register()` if needed).
+- `@Req()` / `@Res()` deliver `ElysiaRequest` / `ElysiaReply` wrappers, not Express-shaped objects. Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed.
+- Microservices / hybrid app mode untested.
 
 ### Runtime
 
