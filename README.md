@@ -75,6 +75,46 @@ If the body doesn't match the schema, Elysia returns a `422` response with detai
 - `@RouteConfig({ tags, ... })` — arbitrary route config object
 - `@RouteDetail({ summary, description, tags, deprecated, hide })` — OpenAPI-style metadata (consumed by `@elysiajs/openapi` if registered)
 
+## Body parsing and `rawBody`
+
+Elysia parses request bodies automatically based on `content-type`, so the common case needs no setup. For webhooks that need to verify a signature against the **exact bytes** of the request, opt into raw body capture:
+
+```ts
+const app = await NestFactory.create<NestElysiaApplication>(AppModule, new ElysiaAdapter(), {
+  rawBody: true,
+});
+```
+
+Then read it inside controllers / guards via `@Req()`:
+
+```ts
+import { Controller, Post, Req } from '@nestjs/common';
+import type { ElysiaRequest } from 'platform-elysia';
+
+@Controller('webhooks')
+export class WebhooksController {
+  @Post('stripe')
+  stripe(@Req() req: ElysiaRequest) {
+    const sig = req.get('stripe-signature');
+    const verified = verify(req.rawBody!, sig);
+  }
+}
+```
+
+To narrow which content-types capture rawBody (when `rawBody: true` is on globally), call `app.useBodyParser('application/json')` for each type you want kept.
+
+To register a **custom parser** for a content-type Elysia doesn't handle out of the box (e.g. protobuf):
+
+```ts
+app.useBodyParser(
+  'application/x-protobuf',
+  undefined,
+  ({ rawBody, contentType }) => decodeProtobuf(rawBody),
+);
+```
+
+The parser receives the raw `Buffer` and returns the parsed value Elysia exposes as `ctx.body` (and Nest exposes via `@Body()`).
+
 ## Trust proxy
 
 When the app sits behind a reverse proxy (Cloudflare, ALB, nginx, Caddy), enable `trustProxy` so `request.ip`, `request.hostname` and `request.protocol` honor `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` (with `X-Real-IP` as a fallback for the IP):
@@ -145,7 +185,6 @@ test('GET /users', async () => {
 - **WebSockets** — `@WebSocketGateway()` is not bridged. Workaround: `app.register(elysiaWs)` directly.
 - **`useStaticAssets()`** — not implemented. Use `app.register(staticPlugin())` from `@elysiajs/static`.
 - **`setViewEngine()`** — not implemented (no SSR templating support).
-- **`useBodyParser()`** — currently a no-op; Elysia parses bodies automatically by `content-type`.
 - **`@Req()` / `@Res()`** — receive `ElysiaRequest` / `ElysiaReply` wrappers, not Express request/response. Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed.
 - **Microservices / hybrid app** — untested.
 

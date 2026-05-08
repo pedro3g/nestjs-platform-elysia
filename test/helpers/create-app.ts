@@ -7,6 +7,7 @@ export interface CreateAppOptions {
   configure?: (app: NestElysiaApplication) => void | Promise<void>;
   adapterOptions?: ConstructorParameters<typeof ElysiaAdapter>[0];
   logger?: false | LogLevel[];
+  rawBody?: boolean;
 }
 
 export async function createApp(options: CreateAppOptions): Promise<NestElysiaApplication> {
@@ -16,7 +17,10 @@ export async function createApp(options: CreateAppOptions): Promise<NestElysiaAp
 
   const app = moduleRef.createNestApplication<NestElysiaApplication>(
     new ElysiaAdapter(options.adapterOptions),
-    { logger: options.logger ?? false },
+    {
+      logger: options.logger ?? false,
+      rawBody: options.rawBody,
+    },
   );
 
   if (options.configure) await options.configure(app);

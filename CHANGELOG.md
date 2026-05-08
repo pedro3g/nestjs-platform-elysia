@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `trustProxy` option on `ElysiaAdapter` — accepts `true` (resolve to leftmost `X-Forwarded-For`) or a custom resolver `(forwardedFor: string[], directIp?: string) => string | undefined`. When enabled, `request.ip` honors `X-Forwarded-For` (with `X-Real-IP` as fallback), `request.hostname` honors `X-Forwarded-Host`, and `request.protocol` honors `X-Forwarded-Proto`. Default remains `false` (direct connection only).
+- `useBodyParser()` is no longer a no-op. Combined with `NestApplicationOptions.rawBody: true`, it captures the raw body buffer onto `request.rawBody` for parsed requests (use `@Req() req: ElysiaRequest` and read `req.rawBody`). Calling `useBodyParser(type)` once or more narrows the capture to the listed content-types. Passing a `parser` (4th arg, per Nest's forwarding convention) registers a custom Elysia `onParse` handler for unrecognized content-types — receives `{ request, contentType, rawBody }` and returns the parsed value.
 
 ### Fixed
 
@@ -43,7 +44,6 @@ Initial release.
 
 - `@WebSocketGateway()` not bridged — workaround: `app.register(elysiaWs())` directly
 - `useStaticAssets()`, `setViewEngine()` not implemented (no SSR templating support)
-- `useBodyParser()` is a no-op; Elysia parses bodies automatically based on `content-type`
 - `@Req()` / `@Res()` deliver `ElysiaRequest` / `ElysiaReply` wrappers, not Express-shaped objects (Express-only APIs like `.is()`, `.accepts()`, `.signedCookies` are not exposed)
 - Microservices / hybrid app mode untested
 

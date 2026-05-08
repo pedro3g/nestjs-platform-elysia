@@ -91,6 +91,10 @@ export class ElysiaRequest {
     return this.elysia.cookie as unknown as Record<string, unknown>;
   }
 
+  public get rawBody(): Buffer | undefined {
+    return (this.raw as Request & { rawBody?: Buffer }).rawBody;
+  }
+
   public get(name: string): string | undefined {
     return this.headers[name.toLowerCase()];
   }

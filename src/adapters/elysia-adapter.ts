@@ -20,7 +20,10 @@ import type {
   TrustProxyOption,
   TrustProxyResolver,
 } from '../interfaces/elysia-adapter-options.interface';
-import type { NestElysiaBodyParserOptions } from '../interfaces/nest-elysia-body-parser-options.interface';
+import type {
+  BodyParserHandler,
+  NestElysiaBodyParserOptions,
+} from '../interfaces/nest-elysia-body-parser-options.interface';
 import { ElysiaReply } from '../reply/elysia-reply';
 import { ElysiaRequest } from '../request/elysia-request';
 import { compilePathMatcher, normalizePath } from '../utils/path-utils';
@@ -34,6 +37,7 @@ type AnyElysiaInstance = {
   onRequest: (handler: unknown) => unknown;
   onResponse: (handler: unknown) => unknown;
   onBeforeHandle: (handler: unknown) => unknown;
+  onParse: (handler: unknown) => unknown;
   handle: (request: Request) => Promise<Response>;
   listen: (
     options: number | string | { hostname?: string; port?: number },
@@ -42,6 +46,17 @@ type AnyElysiaInstance = {
   stop: (closeActiveConnections?: boolean) => Promise<void> | void;
   server: unknown;
 };
+
+const CONTENT_TYPE_ALIASES: Record<string, string> = {
+  json: 'application/json',
+  urlencoded: 'application/x-www-form-urlencoded',
+  text: 'text/plain',
+  raw: 'application/octet-stream',
+};
+
+function normalizeContentType(type: string): string {
+  return CONTENT_TYPE_ALIASES[type] ?? type.split(';')[0]!.trim().toLowerCase();
+}
 
 type ElysiaCtorArg = ElysiaAdapterOptions | object | undefined;
 
@@ -86,6 +101,10 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private bunServer: { hostname: string; port: number; stop: () => void } | null = null;
   private readonly serverProxy = new HttpServerProxy();
   private trustProxy?: TrustProxyResolver;
+  private globalRawBody = false;
+  private rawBodyTypes = new Set<string>();
+  private customParsers = new Map<string, BodyParserHandler>();
+  private parseHookInstalled = false;
 
   constructor(instanceOrOptions?: ElysiaCtorArg) {
     const isInstance =
@@ -386,15 +405,70 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     return this;
   }
 
-  public override registerParserMiddleware(_prefix?: string, _rawBody?: boolean): void {
-    // Elysia parses body automatically based on content-type.
+  public override registerParserMiddleware(_prefix?: string, rawBody?: boolean): void {
+    if (rawBody) {
+      this.globalRawBody = true;
+      this.installParseHook();
+    }
   }
 
-  public useBodyParser(_type: string | string[], _options?: NestElysiaBodyParserOptions): unknown {
-    this.logger.warn(
-      'ElysiaAdapter.useBodyParser() is a no-op; Elysia parses bodies based on content-type. Use Elysia plugins for custom parsers.',
-    );
+  public useBodyParser(
+    type: string | string[],
+    rawBody?: boolean,
+    _options?: NestElysiaBodyParserOptions,
+    parser?: BodyParserHandler,
+  ): this {
+    const types = Array.isArray(type) ? type : [type];
+    for (const t of types) {
+      const normalized = normalizeContentType(t);
+      if (rawBody) this.rawBodyTypes.add(normalized);
+      if (parser) this.customParsers.set(normalized, parser);
+    }
+    if (this.rawBodyTypes.size > 0 || this.customParsers.size > 0 || this.globalRawBody) {
+      this.installParseHook();
+    }
     return this;
+  }
+
+  private installParseHook(): void {
+    if (this.parseHookInstalled) return;
+    this.parseHookInstalled = true;
+
+    this.app.onParse(async (ctx: { request: Request }, contentType: string) => {
+      const type = normalizeContentType(contentType ?? '');
+      const customParser = this.customParsers.get(type);
+      const useBodyParserNarrowed = this.rawBodyTypes.size > 0;
+      const wantsRawBody = useBodyParserNarrowed ? this.rawBodyTypes.has(type) : this.globalRawBody;
+
+      if (!customParser && !wantsRawBody) return undefined;
+
+      const buffer = Buffer.from(await ctx.request.arrayBuffer());
+      (ctx.request as Request & { rawBody?: Buffer }).rawBody = buffer;
+
+      if (customParser) {
+        return customParser({ request: ctx.request, contentType: type, rawBody: buffer });
+      }
+
+      return ElysiaAdapter.defaultParseFor(type, buffer);
+    });
+  }
+
+  private static defaultParseFor(type: string, buffer: Buffer): unknown {
+    const text = buffer.toString('utf-8');
+    if (type === 'application/json') {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return undefined;
+      }
+    }
+    if (type === 'application/x-www-form-urlencoded') {
+      return Object.fromEntries(new URLSearchParams(text));
+    }
+    if (type.startsWith('text/')) {
+      return text;
+    }
+    return buffer;
   }
 
   public enableCors(options?: unknown): unknown {
