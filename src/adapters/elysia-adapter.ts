@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { NestApplicationOptions, VersionValue } from '@nestjs/common/interfaces';
 import { AbstractHttpAdapter } from '@nestjs/core';
+import type { AnyElysia } from 'elysia';
 import {
   ELYSIA_ROUTE_CONFIG_METADATA,
   ELYSIA_ROUTE_DETAIL_METADATA,
@@ -168,7 +169,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     return this.serverProxy as unknown as T;
   }
 
-  public override getInstance<T = AnyElysiaInstance>(): T {
+  public override getInstance<T = AnyElysia>(): T {
     return this.instance as T;
   }
 
