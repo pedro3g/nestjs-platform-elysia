@@ -105,6 +105,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private rawBodyTypes = new Set<string>();
   private customParsers = new Map<string, BodyParserHandler>();
   private parseHookInstalled = false;
+  private readonly handlerVersions = new WeakMap<NestFunction, VersionValue>();
 
   constructor(instanceOrOptions?: ElysiaCtorArg) {
     const isInstance =
@@ -489,15 +490,12 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     versioningOptions: VersioningOptions,
   ): (req: ElysiaRequest, res: ElysiaReply, next: () => void) => (...args: any[]) => any {
     if (!this.versioningOptions) this.versioningOptions = versioningOptions;
-    const versioned = handler as ((
+    this.handlerVersions.set(handler, version);
+    return handler as (
       req: ElysiaRequest,
       res: ElysiaReply,
       next: () => void,
-    ) => (...args: any[]) => any) & {
-      version: VersionValue;
-    };
-    versioned.version = version;
-    return versioned;
+    ) => (...args: any[]) => any;
   }
 
   public override async createMiddlewareFactory(
@@ -519,13 +517,9 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     const normalizedPath = normalizePath(path);
     const key = METHOD_KEY(method, normalizedPath);
 
-    const handlerWithMeta = handler as VersionedHandlerEntry['handler'] & {
-      version?: VersionValue;
-    };
-
     const existing = this.routeTable.get(key);
     const entry: VersionedHandlerEntry = {
-      version: handlerWithMeta.version,
+      version: this.handlerVersions.get(handler as unknown as NestFunction),
       handler,
       schemaMeta: Reflect.getMetadata?.(ELYSIA_ROUTE_SCHEMA_METADATA, handler),
       hookMeta: Reflect.getMetadata?.(ELYSIA_ROUTE_HOOK_METADATA, handler),
