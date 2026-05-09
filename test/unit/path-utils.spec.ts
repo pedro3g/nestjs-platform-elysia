@@ -59,8 +59,9 @@ describe('compilePathMatcher', () => {
     expect(re.test('/files/nested/path')).toBe(true);
   });
 
-  test('invalid pattern falls back to permissive matcher', () => {
-    const re = compilePathMatcher('::invalid::');
-    expect(re.test('/anything')).toBe(true);
+  test('invalid pattern throws instead of silently matching everything', () => {
+    expect(() => compilePathMatcher('::invalid::')).toThrow(
+      /Failed to compile middleware path matcher for "::invalid::"/,
+    );
   });
 });

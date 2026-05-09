@@ -16,7 +16,9 @@ export function compilePathMatcher(path: string): RegExp {
   try {
     const { regexp } = pathToRegexp(p);
     return regexp;
-  } catch {
-    return /^.*$/;
+  } catch (err) {
+    throw new Error(
+      `Failed to compile middleware path matcher for "${path}": ${(err as Error).message}`,
+    );
   }
 }
