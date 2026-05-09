@@ -55,6 +55,16 @@ const CONTENT_TYPE_ALIASES: Record<string, string> = {
   raw: 'application/octet-stream',
 };
 
+const DEFAULT_BODY_LIMIT_BYTES = 1 * 1024 * 1024;
+
+class BodyTooLargeError extends Error {
+  public readonly statusCode = 413;
+  constructor(public readonly limit: number) {
+    super(`Request body exceeds the configured limit of ${limit} bytes`);
+    this.name = 'BodyTooLargeError';
+  }
+}
+
 function normalizeContentType(type: string): string {
   return CONTENT_TYPE_ALIASES[type] ?? type.split(';')[0]!.trim().toLowerCase();
 }
@@ -107,6 +117,8 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private rawBodyTypes = new Set<string>();
   private customParsers = new Map<string, BodyParserHandler>();
   private parseHookInstalled = false;
+  private bodyLimit = DEFAULT_BODY_LIMIT_BYTES;
+  private warnedAboutReflect = false;
   private readonly handlerVersions = new WeakMap<NestFunction, VersionValue>();
 
   constructor(instanceOrOptions?: ElysiaCtorArg) {
@@ -117,11 +129,13 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       'handle' in instanceOrOptions;
 
     let trustProxyOpt: TrustProxyOption | undefined;
+    let bodyLimitOpt: number | undefined;
     let elysiaInput: ElysiaCtorArg = instanceOrOptions;
 
     if (instanceOrOptions && typeof instanceOrOptions === 'object' && !isInstance) {
-      const { trustProxy, ...rest } = instanceOrOptions as ElysiaAdapterOptions;
+      const { trustProxy, bodyLimit, ...rest } = instanceOrOptions as ElysiaAdapterOptions;
       trustProxyOpt = trustProxy;
+      bodyLimitOpt = bodyLimit;
       elysiaInput = rest as ElysiaCtorArg;
     }
 
@@ -129,6 +143,9 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     super(elysia);
 
     this.trustProxy = ElysiaAdapter.resolveTrustProxy(trustProxyOpt);
+    if (typeof bodyLimitOpt === 'number' && bodyLimitOpt >= 0 && Number.isFinite(bodyLimitOpt)) {
+      this.bodyLimit = bodyLimitOpt;
+    }
   }
 
   private static resolveInstance(input?: ElysiaCtorArg): AnyElysiaInstance {
@@ -143,6 +160,13 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
 
   private static resolveTrustProxy(opt?: TrustProxyOption): TrustProxyResolver | undefined {
     if (opt === true) return (forwardedFor) => forwardedFor[0];
+    if (typeof opt === 'number' && Number.isFinite(opt) && opt > 0) {
+      const hops = Math.floor(opt);
+      return (forwardedFor) => {
+        const idx = forwardedFor.length - hops;
+        return idx >= 0 ? forwardedFor[idx] : forwardedFor[0];
+      };
+    }
     if (typeof opt === 'function') return opt;
     return undefined;
   }
@@ -445,7 +469,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
 
       if (!customParser && !wantsRawBody) return undefined;
 
-      const buffer = Buffer.from(await ctx.request.arrayBuffer());
+      const buffer = await this.readBodyWithLimit(ctx.request);
       (ctx.request as Request & { rawBody?: Buffer }).rawBody = buffer;
 
       if (customParser) {
@@ -454,6 +478,40 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
 
       return ElysiaAdapter.defaultParseFor(type, buffer);
     });
+  }
+
+  private async readBodyWithLimit(request: Request): Promise<Buffer> {
+    const limit = this.bodyLimit;
+    if (limit <= 0) {
+      return Buffer.from(await request.arrayBuffer());
+    }
+    const contentLength = request.headers.get('content-length');
+    if (contentLength !== null) {
+      const declared = Number(contentLength);
+      if (Number.isFinite(declared) && declared > limit) {
+        throw new BodyTooLargeError(limit);
+      }
+    }
+    if (!request.body) return Buffer.alloc(0);
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        total += value.byteLength;
+        if (total > limit) {
+          await reader.cancel();
+          throw new BodyTooLargeError(limit);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock?.();
+    }
+    return Buffer.concat(chunks);
   }
 
   private static defaultParseFor(type: string, buffer: Buffer): unknown {
@@ -514,11 +572,23 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     };
   }
 
+  private warnIfReflectMetadataMissing(): void {
+    if (this.warnedAboutReflect) return;
+    if (typeof (Reflect as { getMetadata?: unknown }).getMetadata !== 'function') {
+      this.warnedAboutReflect = true;
+      this.logger.error(
+        "reflect-metadata is not loaded. @RouteSchema/@RouteHook/@RouteConfig/@RouteDetail decorators will be silently ignored, removing schema validation. Add `import 'reflect-metadata';` at the entry point of your application.",
+      );
+    }
+  }
+
   private registerRoute(method: HttpMethodUpper, args: unknown[]): unknown {
     const path = (args.length >= 2 ? args[0] : '/') as string | RegExp;
     const handler = (args.length >= 2 ? args[1] : args[0]) as VersionedHandlerEntry['handler'];
     const normalizedPath = normalizePath(path);
     const key = METHOD_KEY(method, normalizedPath);
+
+    this.warnIfReflectMetadataMissing();
 
     const existing = this.routeTable.get(key);
     const entry: VersionedHandlerEntry = {
@@ -602,6 +672,14 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     );
     if (matched) return matched.handler;
 
+    // Only fall back to a version-neutral handler when the client did not
+    // specify a version. If the client *did* send an explicit version that
+    // doesn't match any registered handler, return undefined so the caller
+    // emits 404 — otherwise unknown versions silently route to deprecated
+    // neutral handlers, which is a security footgun.
+    const clientOmittedVersion = requestVersion === undefined || requestVersion === VERSION_NEUTRAL;
+    if (!clientOmittedVersion) return undefined;
+
     const neutral = route.handlers.find(
       (h) => h.version === VERSION_NEUTRAL || h.version === undefined,
     );
@@ -611,6 +689,19 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private installErrorBridge(): void {
     this.app.onError(async (ctx: unknown) => {
       const c = ctx as { error: unknown; code: string; request: Request; set: { status?: number } };
+      const innerError = (c.error as { cause?: unknown })?.cause ?? c.error;
+      if (
+        c.error instanceof BodyTooLargeError ||
+        innerError instanceof BodyTooLargeError ||
+        (typeof c.error === 'object' &&
+          c.error !== null &&
+          (c.error as { name?: string }).name === 'BodyTooLargeError')
+      ) {
+        return new Response(JSON.stringify({ statusCode: 413, message: 'Payload Too Large' }), {
+          status: 413,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       if (c.code === 'NOT_FOUND' && this.notFoundHandler) {
         const elysiaCtx = c as unknown as ConstructorParameters<typeof ElysiaRequest>[0];
         const req = this.wrapRequest(elysiaCtx);

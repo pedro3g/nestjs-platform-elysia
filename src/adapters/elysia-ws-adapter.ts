@@ -7,6 +7,23 @@ export interface ElysiaWsAdapterOptions {
   namespace?: string;
 }
 
+const DEFAULT_WS_MAX_MESSAGE_BYTES = 1 * 1024 * 1024;
+
+export interface ElysiaWsAdapterConfig {
+  /**
+   * Maximum size (in bytes) of a single inbound WebSocket message. Messages
+   * above the limit are dropped and a generic error envelope is sent back
+   * to the client. Defaults to 1 MiB. Set to 0 to disable the check.
+   */
+  maxMessageSize?: number;
+  /**
+   * When true, error messages thrown by handlers are forwarded verbatim to
+   * the client. Defaults to false — clients receive a generic "Internal
+   * error" so handler exceptions do not leak server internals.
+   */
+  exposeErrorMessages?: boolean;
+}
+
 interface RawElysiaWs {
   send: (data: unknown) => unknown;
   close: (code?: number, reason?: string) => unknown;
@@ -82,7 +99,19 @@ export interface ElysiaWsServer {
 }
 
 export class ElysiaWsAdapter implements WebSocketAdapter<ElysiaWsServer, ElysiaWsClient> {
-  constructor(private readonly app: NestElysiaApplication | INestApplicationContext) {}
+  private readonly maxMessageSize: number;
+  private readonly exposeErrorMessages: boolean;
+
+  constructor(
+    private readonly app: NestElysiaApplication | INestApplicationContext,
+    config: ElysiaWsAdapterConfig = {},
+  ) {
+    this.maxMessageSize =
+      typeof config.maxMessageSize === 'number' && Number.isFinite(config.maxMessageSize)
+        ? Math.max(0, Math.floor(config.maxMessageSize))
+        : DEFAULT_WS_MAX_MESSAGE_BYTES;
+    this.exposeErrorMessages = config.exposeErrorMessages === true;
+  }
 
   create(_port: number, options: ElysiaWsAdapterOptions = {}): ElysiaWsServer {
     const path = this.normalizePath(options.path ?? options.namespace ?? '/');
@@ -133,6 +162,10 @@ export class ElysiaWsAdapter implements WebSocketAdapter<ElysiaWsServer, ElysiaW
     );
 
     client.on('message', async (raw) => {
+      if (this.maxMessageSize > 0 && this.exceedsLimit(raw)) {
+        client.send(JSON.stringify({ event: 'error', data: { message: 'Message too large' } }));
+        return;
+      }
       const parsed = typeof raw === 'string' ? this.parseJson(raw) : raw;
       const envelope = parsed as { event?: unknown; data?: unknown };
       const event = typeof envelope?.event === 'string' ? envelope.event : undefined;
@@ -153,7 +186,8 @@ export class ElysiaWsAdapter implements WebSocketAdapter<ElysiaWsServer, ElysiaW
         const value = await lastValueFrom(transform(stream$));
         client.send(JSON.stringify(asEnvelope(value, event)));
       } catch (err) {
-        client.send(JSON.stringify({ event: 'error', data: { message: (err as Error).message } }));
+        const message = this.exposeErrorMessages ? (err as Error).message : 'Internal error';
+        client.send(JSON.stringify({ event: 'error', data: { message } }));
       }
     });
   }
@@ -184,6 +218,20 @@ export class ElysiaWsAdapter implements WebSocketAdapter<ElysiaWsServer, ElysiaW
     } catch {
       return raw;
     }
+  }
+
+  private exceedsLimit(raw: unknown): boolean {
+    if (typeof raw === 'string') {
+      // UTF-8 bytes <= 4 * code units; cheap upper bound that avoids encoding.
+      return raw.length * 4 > this.maxMessageSize;
+    }
+    if (raw instanceof ArrayBuffer) {
+      return raw.byteLength > this.maxMessageSize;
+    }
+    if (ArrayBuffer.isView(raw)) {
+      return raw.byteLength > this.maxMessageSize;
+    }
+    return false;
   }
 }
 

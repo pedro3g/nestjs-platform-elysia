@@ -1,9 +1,13 @@
+import { isIP } from 'node:net';
 import type { Context } from 'elysia';
 import type { TrustProxyResolver } from '../interfaces/elysia-adapter-options.interface';
 
 export interface ElysiaRequestOptions {
   trustProxy?: TrustProxyResolver;
 }
+
+const HOSTNAME_RE = /^[A-Za-z0-9._-]+(?::\d{1,5})?$|^\[[0-9a-fA-F:]+\](?::\d{1,5})?$/;
+const ALLOWED_PROTOCOLS = new Set(['http', 'https']);
 
 export class ElysiaRequest {
   public readonly elysia: Context;
@@ -63,7 +67,10 @@ export class ElysiaRequest {
   public get hostname(): string {
     if (this.options.trustProxy) {
       const forwardedHost = this.get('x-forwarded-host');
-      if (forwardedHost) return forwardedHost.split(',')[0]!.trim();
+      if (forwardedHost) {
+        const candidate = forwardedHost.split(',')[0]!.trim();
+        if (HOSTNAME_RE.test(candidate)) return candidate;
+      }
     }
     return this.parsedUrl.hostname;
   }
@@ -71,7 +78,10 @@ export class ElysiaRequest {
   public get protocol(): string {
     if (this.options.trustProxy) {
       const forwardedProto = this.get('x-forwarded-proto');
-      if (forwardedProto) return forwardedProto.split(',')[0]!.trim();
+      if (forwardedProto) {
+        const candidate = forwardedProto.split(',')[0]!.trim().toLowerCase();
+        if (ALLOWED_PROTOCOLS.has(candidate)) return candidate;
+      }
     }
     return this.parsedUrl.protocol.replace(':', '');
   }
@@ -81,10 +91,11 @@ export class ElysiaRequest {
     if (this.options.trustProxy) {
       const forwardedFor = this.parseForwardedFor();
       if (forwardedFor.length > 0) {
-        return this.options.trustProxy(forwardedFor, directIp);
+        const resolved = this.options.trustProxy(forwardedFor, directIp);
+        if (resolved && isIP(resolved) !== 0) return resolved;
       }
-      const realIp = this.get('x-real-ip');
-      if (realIp) return realIp;
+      const realIp = this.get('x-real-ip')?.trim();
+      if (realIp && isIP(realIp) !== 0) return realIp;
     }
     return directIp;
   }
@@ -129,7 +140,7 @@ export class ElysiaRequest {
       ? value
           .split(',')
           .map((s) => s.trim())
-          .filter(Boolean)
+          .filter((s) => s.length > 0 && isIP(s) !== 0)
       : [];
     return this._forwardedFor;
   }
