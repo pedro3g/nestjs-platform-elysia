@@ -622,6 +622,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
         return reply._toResponse();
       }
       if (isElysiaNativeError(c.code)) {
+        // VALIDATION/PARSE/etc — let Elysia render its own native error response.
         return undefined;
       }
       if (this.errorHandler) {
