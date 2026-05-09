@@ -144,6 +144,7 @@ export class ElysiaReply {
     return this;
   }
 
+  /** @internal — used by ElysiaAdapter to finalize the response; not part of the public API. */
   public _toResponse(): unknown {
     if (this._redirect) {
       return new Response(null, {
