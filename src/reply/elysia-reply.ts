@@ -59,7 +59,7 @@ export class ElysiaReply {
   }
 
   public getHeaders(): Record<string, string | string[]> {
-    return { ...this.headerStore };
+    return this.headerStore;
   }
 
   public hasHeader(name: string): boolean {
