@@ -1,6 +1,6 @@
 {
   "name": "nestjs-platform-elysia",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "NestJS HTTP adapter for the Elysia web framework on Bun",
   "license": "MIT",
   "author": "Pedro Henrique",
