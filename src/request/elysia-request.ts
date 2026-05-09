@@ -10,6 +10,8 @@ export class ElysiaRequest {
   public readonly raw: Request;
   private readonly options: ElysiaRequestOptions;
   private _parsedUrl?: URL;
+  private _forwardedFor?: string[];
+  private _directIp?: string | null;
 
   constructor(ctx: Context, options: ElysiaRequestOptions = {}) {
     this.elysia = ctx;
@@ -104,21 +106,31 @@ export class ElysiaRequest {
   }
 
   private get directIp(): string | undefined {
+    if (this._directIp !== undefined) return this._directIp ?? undefined;
     const server = this.elysia.server;
-    if (!server) return undefined;
+    if (!server) {
+      this._directIp = null;
+      return undefined;
+    }
     try {
-      return server.requestIP(this.raw)?.address;
+      const resolved = server.requestIP(this.raw)?.address;
+      this._directIp = resolved ?? null;
+      return resolved;
     } catch {
+      this._directIp = null;
       return undefined;
     }
   }
 
   private parseForwardedFor(): string[] {
+    if (this._forwardedFor !== undefined) return this._forwardedFor;
     const value = this.get('x-forwarded-for');
-    if (!value) return [];
-    return value
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    this._forwardedFor = value
+      ? value
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    return this._forwardedFor;
   }
 }
