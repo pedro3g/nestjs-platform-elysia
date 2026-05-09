@@ -78,6 +78,7 @@ interface RouteEntry {
 
 interface MiddlewareEntry {
   method: RequestMethod;
+  methodStr: HttpMethodUpper;
   matcher: RegExp;
   callback: (req: ElysiaRequest, res: ElysiaReply, next: (err?: unknown) => void) => unknown;
 }
@@ -504,6 +505,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     return (path: string, callback: NestFunction) => {
       this.middlewares.push({
         method,
+        methodStr: methodEnumToString(method),
         matcher: compilePathMatcher(path),
         callback: callback as MiddlewareEntry['callback'],
       });
@@ -648,8 +650,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       const methodName = req.method.toUpperCase();
 
       const matched = this.middlewares.filter((m) => {
-        const mwMethodStr = methodEnumToString(m.method);
-        if (mwMethodStr !== 'ALL' && mwMethodStr !== methodName) return false;
+        if (m.methodStr !== 'ALL' && m.methodStr !== methodName) return false;
         return m.matcher.test(path);
       });
 
@@ -748,7 +749,7 @@ function isElysiaNativeError(code: string): boolean {
   );
 }
 
-function methodEnumToString(method: RequestMethod): string {
+function methodEnumToString(method: RequestMethod): HttpMethodUpper {
   switch (method) {
     case RequestMethod.GET:
       return 'GET';
