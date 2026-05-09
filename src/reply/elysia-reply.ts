@@ -55,7 +55,8 @@ export class ElysiaReply {
   }
 
   public getHeader(name: string): string | string[] | undefined {
-    return this.headerStore[name.toLowerCase()];
+    const key = name.toLowerCase();
+    return this.headerStore[key];
   }
 
   public getHeaders(): Record<string, string | string[]> {
@@ -63,11 +64,13 @@ export class ElysiaReply {
   }
 
   public hasHeader(name: string): boolean {
-    return name.toLowerCase() in this.elysia.set.headers;
+    const key = name.toLowerCase();
+    return key in this.elysia.set.headers;
   }
 
   public removeHeader(name: string): this {
-    delete this.headerStore[name.toLowerCase()];
+    const key = name.toLowerCase();
+    delete this.headerStore[key];
     return this;
   }
 
