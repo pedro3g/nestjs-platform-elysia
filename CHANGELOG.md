@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-08
+
+### Fixed
+
+- `compilePathMatcher` now throws when `path-to-regexp` rejects a middleware pattern instead of silently falling back to a match-all regex. A typo'd middleware path used to register as a global middleware; now the boot fails loud with the original pattern in the error message.
+
+### Changed
+
+- `ElysiaAdapter.applyVersionFilter` no longer attaches a `version` field to the handler function. Versions are tracked in a private `WeakMap` keyed by handler reference, so the version isn't lost if the handler is wrapped downstream.
+- Per-request middleware dispatch no longer recomputes the `RequestMethod` enum → string for every entry; the upper-case method string is cached on `MiddlewareEntry` at registration.
+- `ElysiaReply.getHeaders()` returns the underlying header store directly instead of allocating a fresh shallow copy on every call.
+- `ElysiaRequest` memoizes parsed `X-Forwarded-For` and the resolved direct connection IP per request; repeated reads of `request.ip` no longer re-split the header or re-invoke `server.requestIP()`.
+
+### Types
+
+- `ElysiaAdapter.getInstance<T = AnyElysia>()` now defaults `T` to Elysia's `AnyElysia` instead of `unknown`, so consumers reaching for the raw Elysia escape hatch get full typings without an explicit type argument.
+
 ## [0.1.1] - 2026-05-08
 
 ### Fixed
