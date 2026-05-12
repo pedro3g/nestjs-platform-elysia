@@ -106,4 +106,55 @@ describe('e2e: versioning', () => {
     expect(r2.status).toBe(200);
     expect(await r2.json()).toEqual({ version: '2' });
   });
+
+  test('MEDIA_TYPE versioning: version key is found regardless of position', async () => {
+    app = await createApp({
+      modules: [VersionedModule],
+      configure: (a) => {
+        a.enableVersioning({ type: VersioningType.MEDIA_TYPE, key: 'v=' });
+      },
+    });
+
+    const r = await inject(app, {
+      url: '/data',
+      headers: { accept: 'application/json; charset=utf-8; v=1' },
+    });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ version: '1' });
+  });
+
+  test('Explicit unknown version returns 404 (no silent fallback to neutral)', async () => {
+    app = await createApp({
+      modules: [VersionedModule],
+      configure: (a) => {
+        a.enableVersioning({ type: VersioningType.HEADER, header: 'X-API-Version' });
+      },
+    });
+
+    const r = await inject(app, { url: '/data', headers: { 'x-api-version': '99' } });
+    expect(r.status).toBe(404);
+  });
+
+  test('CUSTOM versioning: extractor receives the request and dispatches by its return', async () => {
+    app = await createApp({
+      modules: [VersionedModule],
+      configure: (a) => {
+        a.enableVersioning({
+          type: VersioningType.CUSTOM,
+          extractor: (req: unknown) => {
+            const headers = (req as { headers?: Record<string, string> }).headers;
+            return headers?.['x-tenant'] === 'beta' ? '2' : '1';
+          },
+        });
+      },
+    });
+
+    const r1 = await inject(app, { url: '/data' });
+    expect(r1.status).toBe(200);
+    expect(await r1.json()).toEqual({ version: '1' });
+
+    const r2 = await inject(app, { url: '/data', headers: { 'x-tenant': 'beta' } });
+    expect(r2.status).toBe(200);
+    expect(await r2.json()).toEqual({ version: '2' });
+  });
 });

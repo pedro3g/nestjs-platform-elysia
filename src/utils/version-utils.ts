@@ -9,13 +9,20 @@ export function extractRequestVersion(
   switch (options.type) {
     case VersioningType.MEDIA_TYPE: {
       const accept = req.get('accept') ?? '';
-      const versionPart = accept.split(';')[1] ?? '';
-      const value = versionPart.split(options.key)[1];
-      return value === undefined ? VERSION_NEUTRAL : value.trim();
+      const parts = accept.split(',')[0]?.split(';') ?? [];
+      const key = options.key;
+      for (let i = 1; i < parts.length; i++) {
+        const segment = parts[i]!.trim();
+        if (segment.startsWith(key)) {
+          const value = segment.slice(key.length).trim();
+          return value === '' ? VERSION_NEUTRAL : value;
+        }
+      }
+      return VERSION_NEUTRAL;
     }
     case VersioningType.HEADER: {
       const value = req.get(options.header);
-      return value === undefined ? VERSION_NEUTRAL : value;
+      return value === undefined ? VERSION_NEUTRAL : value.trim();
     }
     case VersioningType.CUSTOM: {
       return options.extractor(req as unknown as Record<string, unknown>);
@@ -33,10 +40,17 @@ export function versionMatches(
   if (requestVersion === VERSION_NEUTRAL) return false;
   if (requestVersion === undefined) return false;
 
-  const routeList = (Array.isArray(routeVersion) ? routeVersion : [routeVersion]) as string[];
-  const requestList = (
-    Array.isArray(requestVersion) ? requestVersion : [requestVersion]
-  ) as string[];
+  const routeIsArray = Array.isArray(routeVersion);
+  const requestIsArray = Array.isArray(requestVersion);
+  if (!routeIsArray && !requestIsArray) {
+    return routeVersion === requestVersion;
+  }
+  const routeList: readonly string[] = routeIsArray
+    ? (routeVersion as string[])
+    : [routeVersion as string];
+  const requestList: readonly string[] = requestIsArray
+    ? (requestVersion as string[])
+    : [requestVersion as string];
 
   return routeList.some((rv) => requestList.includes(rv));
 }

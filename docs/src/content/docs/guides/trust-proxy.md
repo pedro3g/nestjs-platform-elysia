@@ -7,23 +7,44 @@ sidebar:
 
 When the app sits behind a reverse proxy — Cloudflare, AWS ALB, nginx, Caddy, Fly.io's edge, etc. — `request.ip` reports the proxy's IP and `request.hostname` the internal name. To get the real client values, opt into trust proxy.
 
-## Enable globally
+## Three ways to opt in
+
+The `trustProxy` option accepts three shapes, ordered from loosest to strictest:
+
+### `trustProxy: true` — trust everything
 
 ```ts
 new ElysiaAdapter({ trustProxy: true });
 ```
 
-When enabled:
+`request.ip` resolves to the **leftmost** entry in `X-Forwarded-For`. The leftmost entry is, by RFC convention, the client's own claim — so this mode is only safe when **every hop** in front of the server overwrites the header. Use this when:
 
-- `request.ip` resolves to the **leftmost** entry in `X-Forwarded-For` (with `X-Real-IP` as fallback).
-- `request.hostname` reads `X-Forwarded-Host`.
-- `request.protocol` reads `X-Forwarded-Proto`.
+- You run behind a managed CDN/proxy (Cloudflare, AWS ALB, Fastly) that you've configured to strip and rewrite XFF.
+- The server is not reachable directly (no public IP, no debug port).
 
-If no proxy header is present, all three fall back to the direct connection values.
+In `NODE_ENV=production`, the adapter logs a warning so this choice is deliberate.
 
-## Custom resolver
+### `trustProxy: <number>` — Express hop count
 
-For more control — trusting only specific proxies, walking N hops back, CIDR allowlists, etc. — pass a function instead of `true`. The resolver receives the parsed `X-Forwarded-For` list and the direct connection IP, and returns the resolved client IP (or `undefined` to use the direct IP).
+```ts
+new ElysiaAdapter({ trustProxy: 1 });
+```
+
+Trust the rightmost N entries of `X-Forwarded-For` and resolve to the entry one hop further left. This matches Express's `app.set('trust proxy', N)` semantics exactly.
+
+For `X-Forwarded-For: 1.2.3.4, 5.6.7.8, 9.10.11.12`:
+
+| `trustProxy` | Resolved `request.ip` |
+|---|---|
+| `1` | `5.6.7.8` (one to the left of the rightmost trusted hop) |
+| `2` | `1.2.3.4` (two hops back — the original client) |
+| `3` | `1.2.3.4` (falls back to the leftmost when count ≥ length) |
+
+Use this when you know exactly how many trusted proxies sit in front of the server.
+
+### `trustProxy: <function>` — custom resolver
+
+For more control — trusting only specific proxies, walking N hops back, CIDR allowlists, etc. — pass a function. The resolver receives the parsed `X-Forwarded-For` list and the direct connection IP, and returns the resolved client IP (or `undefined` to use the direct IP).
 
 ```ts
 new ElysiaAdapter({
@@ -69,3 +90,14 @@ export class WhoamiController {
 ## Default: off
 
 `trustProxy` defaults to `false`. `request.ip` returns the direct TCP connection IP, `request.hostname` parses from the `Host` header on the actual request URL, and `request.protocol` reads from the request URL. **Never enable trust proxy unless your app is actually behind a proxy you trust** — otherwise clients can spoof `X-Forwarded-For`.
+
+## Header sanitization
+
+When `trustProxy` is on, all four headers are validated before use:
+
+- `X-Forwarded-For` — every entry is checked with `node:net.isIP()`; invalid entries are dropped before the resolver runs.
+- `X-Real-IP` — must pass `isIP()` or it is ignored.
+- `X-Forwarded-Proto` — only `http` and `https` (case-insensitive) are accepted; anything else falls back to the parsed URL protocol.
+- `X-Forwarded-Host` — a strict regex enforces RFC-shaped hostnames (no spaces, no CRLF, no control characters) with a port between 1–65535. Garbage values fall back to the URL host.
+
+These defenses harden the trust path against header injection, log poisoning, and cache-key spoofing.

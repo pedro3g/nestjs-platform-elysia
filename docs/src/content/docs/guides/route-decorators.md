@@ -81,6 +81,10 @@ rateLimited() {
 }
 ```
 
+:::note[Choosing between `@RouteConfig` and `@RouteDetail`]
+`@RouteConfig` writes to the top level of Elysia's `localHook` — for Elysia plugins that read `route.config`. `@RouteDetail` writes to `localHook.detail` — for OpenAPI metadata consumers (`@elysiajs/openapi`, `@elysiajs/swagger`). OpenAPI fields like `tags`, `summary`, `description` belong on `@RouteDetail`; only `@RouteDetail` surfaces them in generated specs.
+:::
+
 ## `@RouteDetail`
 
 OpenAPI-style metadata. Consumed by `@elysiajs/openapi` (or `@elysiajs/swagger`) when registered as a plugin.

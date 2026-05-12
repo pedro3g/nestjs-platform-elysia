@@ -127,6 +127,26 @@ describe('ElysiaReply', () => {
     expect(response.headers.get('Location')).toBe('/new');
   });
 
+  test('redirect preserves Set-Cookie and custom headers set before redirect', () => {
+    const reply = new ElysiaReply(createMockContext());
+    reply.appendHeader('Set-Cookie', 'session=abc; Path=/');
+    reply.appendHeader('Set-Cookie', 'csrf=xyz; Path=/');
+    reply.header('x-trace-id', 'tx-42');
+    reply.redirect(302, '/dashboard');
+    const response = reply._toResponse() as Response;
+    expect(response.headers.get('location')).toBe('/dashboard');
+    expect(response.headers.get('x-trace-id')).toBe('tx-42');
+    const cookies: readonly string[] = response.headers.getSetCookie?.() ?? [];
+    if (cookies.length > 0) {
+      expect(cookies).toContain('session=abc; Path=/');
+      expect(cookies).toContain('csrf=xyz; Path=/');
+    } else {
+      // Older runtimes — at minimum the cookie value must survive the redirect.
+      const joined = response.headers.get('set-cookie') ?? '';
+      expect(joined).toContain('session=abc');
+    }
+  });
+
   test('stream() yields a Response with the stream and headers', () => {
     const reply = new ElysiaReply(createMockContext());
     reply.header('content-type', 'text/event-stream');

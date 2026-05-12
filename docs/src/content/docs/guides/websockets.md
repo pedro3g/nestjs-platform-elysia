@@ -139,3 +139,46 @@ subscribe(@MessageBody() data: unknown, @ConnectedSocket() client: ElysiaWsClien
   // Don't return — direct send, no envelope wrapping.
 }
 ```
+
+## Hardening
+
+`ElysiaWsAdapter` accepts a config object with security-relevant defaults:
+
+```ts
+app.useWebSocketAdapter(
+  new ElysiaWsAdapter(app, {
+    maxMessageSize: 256 * 1024,   // bytes — also forwarded to Bun's `maxPayloadLength`
+    maxJsonDepth: 32,             // JSON nesting cap to prevent parse-cost DoS
+    maxJsonKeys: 1024,            // total key cap across the payload
+    exposeErrorMessages: false,   // do NOT forward `err.message` to clients
+  }),
+);
+```
+
+### `maxMessageSize`
+
+Default: **1 MiB**. Set to `0` to disable. The limit is enforced in two layers:
+
+1. **Bun protocol layer** — `maxPayloadLength` is forwarded to Bun's WebSocket layer, so oversized frames are rejected before the handler is invoked. This is the load-bearing defense.
+2. **Adapter layer** — a precise UTF-8 byte-count check inside `bindMessageHandlers` rejects oversize text frames that somehow slip past, replying with `{ event: 'error', data: { message: 'Message too large' } }` and keeping the connection open.
+
+### `maxJsonDepth` and `maxJsonKeys`
+
+JSON parsing has a cost amplification problem: a 900 KB payload of `{"a":{"a":...}}` can blow the V8 stack, and a payload with 200k keys can stall the event loop for seconds — both *under* `maxMessageSize`.
+
+`maxJsonDepth` (default `32`) and `maxJsonKeys` (default `1024`) are linear-time pre-checks scanned against the raw text *before* `JSON.parse` runs. Violating payloads are dropped with `{ event: 'error', data: { message: 'Payload too complex' } }`.
+
+### `exposeErrorMessages`
+
+- `false` (default): clients receive a generic `"Internal error"` when a handler throws.
+- `true`: the raw `err.message` is forwarded. **Only safe** when every handler error is intentionally user-facing. ORM errors, for example, routinely include SQL fragments, table names, and file paths in `.message`.
+- `(err) => string`: a sanitizer callback. Return a safe per-error message:
+
+```ts
+new ElysiaWsAdapter(app, {
+  exposeErrorMessages: (err) =>
+    err instanceof UserFacingError ? err.message : 'Internal error',
+});
+```
+
+Handler exceptions are also fully wrapped in a `try/catch` — a thrown guard/pipe/interceptor or async rejection inside `handler.callback` is caught, logged via Nest's `Logger`, and surfaced through the configured sanitizer.

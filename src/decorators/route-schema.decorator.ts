@@ -10,5 +10,5 @@ export interface RouteSchemaOptions {
   response?: unknown;
 }
 
-export const RouteSchema = (schema: RouteSchemaOptions) =>
+export const RouteSchema = (schema: RouteSchemaOptions): MethodDecorator =>
   SetMetadata(ELYSIA_ROUTE_SCHEMA_METADATA, schema);

@@ -40,6 +40,18 @@ class ErrorController {
     throw new Error('boom');
   }
 
+  @Get('throw-string')
+  throwString() {
+    // eslint-disable-next-line no-throw-literal
+    throw 'a-raw-string-error';
+  }
+
+  @Get('throw-object')
+  throwObject() {
+    // eslint-disable-next-line no-throw-literal
+    throw { code: 'CUSTOM' };
+  }
+
   @Get('item/:id')
   conditional(@Param('id') id: string) {
     if (id === 'missing') throw new NotFoundException(`no item ${id}`);
@@ -103,5 +115,17 @@ describe('e2e: error handling', () => {
     // verified end-to-end in schema-validation.e2e-spec.ts (422 stays 422)
     const res = await inject(app, { url: '/errors/item/missing' });
     expect(res.status).toBe(404);
+  });
+
+  test('throwing a raw string becomes 500 without crashing the filter chain', async () => {
+    const res = await inject(app, { url: '/errors/throw-string' });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { statusCode: number };
+    expect(body.statusCode).toBe(500);
+  });
+
+  test('throwing a plain object becomes 500 without crashing the filter chain', async () => {
+    const res = await inject(app, { url: '/errors/throw-object' });
+    expect(res.status).toBe(500);
   });
 });

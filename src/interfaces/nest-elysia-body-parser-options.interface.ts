@@ -1,6 +1,7 @@
 export interface NestElysiaBodyParserOptions {
   bodyLimit?: number;
   parseAs?: 'json' | 'text' | 'buffer' | 'arrayBuffer';
+  rawBody?: boolean;
   [key: string]: unknown;
 }
 

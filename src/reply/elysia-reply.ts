@@ -2,6 +2,8 @@ import type { Context } from 'elysia';
 
 type HeaderValue = string | string[] | number;
 
+const TO_RESPONSE = Symbol.for('nestjs-platform-elysia.toResponse');
+
 export class ElysiaReply {
   public readonly elysia: Context;
   public readonly raw: Request;
@@ -147,20 +149,38 @@ export class ElysiaReply {
     return this;
   }
 
-  /** @internal — used by ElysiaAdapter to finalize the response; not part of the public API. */
-  public _toResponse(): unknown {
+  public [TO_RESPONSE](): unknown {
     if (this._redirect) {
-      return new Response(null, {
-        status: this._redirect.status,
-        headers: { Location: this._redirect.url },
-      });
+      const headers = this.buildHeaders(this.headerStore);
+      headers.set('location', this._redirect.url);
+      return new Response(null, { status: this._redirect.status, headers });
     }
     if (this._stream) {
       return new Response(this._stream, {
         status: this._statusCode,
-        headers: this.elysia.set.headers as Record<string, string>,
+        headers: this.buildHeaders(this.headerStore),
       });
     }
     return this._body;
   }
+
+  /** @internal — backwards-compatible name; prefer the symbol-keyed method. */
+  public _toResponse(): unknown {
+    return this[TO_RESPONSE]();
+  }
+
+  private buildHeaders(bag: Record<string, string | string[]>): Headers {
+    const h = new Headers();
+    for (const k of Object.keys(bag)) {
+      const v = bag[k];
+      if (Array.isArray(v)) {
+        for (const item of v) h.append(k, item);
+      } else if (v !== undefined) {
+        h.set(k, v);
+      }
+    }
+    return h;
+  }
 }
+
+export const ELYSIA_REPLY_TO_RESPONSE = TO_RESPONSE;

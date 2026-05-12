@@ -6,8 +6,22 @@ export interface ElysiaRequestOptions {
   trustProxy?: TrustProxyResolver;
 }
 
-const HOSTNAME_RE = /^[A-Za-z0-9._-]+(?::\d{1,5})?$|^\[[0-9a-fA-F:]+\](?::\d{1,5})?$/;
+const HOSTNAME_LABEL = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?';
+const HOSTNAME_RE = new RegExp(
+  `^(?:${HOSTNAME_LABEL})(?:\\.${HOSTNAME_LABEL})*(?::\\d{1,5})?$|^\\[[0-9a-fA-F:]+\\](?::\\d{1,5})?$`,
+);
 const ALLOWED_PROTOCOLS = new Set(['http', 'https']);
+
+function isValidHostHeader(candidate: string): boolean {
+  if (!HOSTNAME_RE.test(candidate)) return false;
+  const colonIdx = candidate.lastIndexOf(':');
+  const bracketEnd = candidate.indexOf(']');
+  if (colonIdx > bracketEnd) {
+    const port = Number(candidate.slice(colonIdx + 1));
+    if (!Number.isFinite(port) || port < 1 || port > 65535) return false;
+  }
+  return true;
+}
 
 export class ElysiaRequest {
   public readonly elysia: Context;
@@ -16,6 +30,9 @@ export class ElysiaRequest {
   private _parsedUrl?: URL;
   private _forwardedFor?: string[];
   private _directIp?: string | null;
+  private _url?: string;
+  private _hostname?: string;
+  private _protocol?: string;
 
   constructor(ctx: Context, options: ElysiaRequestOptions = {}) {
     this.elysia = ctx;
@@ -49,7 +66,10 @@ export class ElysiaRequest {
   }
 
   public get url(): string {
-    return this.parsedUrl.pathname + this.parsedUrl.search;
+    if (this._url === undefined) {
+      this._url = this.parsedUrl.pathname + this.parsedUrl.search;
+    }
+    return this._url;
   }
 
   public get originalUrl(): string {
@@ -65,25 +85,31 @@ export class ElysiaRequest {
   }
 
   public get hostname(): string {
+    if (this._hostname !== undefined) return this._hostname;
+    let resolved: string | undefined;
     if (this.options.trustProxy) {
       const forwardedHost = this.get('x-forwarded-host');
       if (forwardedHost) {
         const candidate = forwardedHost.split(',')[0]!.trim();
-        if (HOSTNAME_RE.test(candidate)) return candidate;
+        if (isValidHostHeader(candidate)) resolved = candidate;
       }
     }
-    return this.parsedUrl.hostname;
+    this._hostname = resolved ?? this.parsedUrl.hostname;
+    return this._hostname;
   }
 
   public get protocol(): string {
+    if (this._protocol !== undefined) return this._protocol;
+    let resolved: string | undefined;
     if (this.options.trustProxy) {
       const forwardedProto = this.get('x-forwarded-proto');
       if (forwardedProto) {
         const candidate = forwardedProto.split(',')[0]!.trim().toLowerCase();
-        if (ALLOWED_PROTOCOLS.has(candidate)) return candidate;
+        if (ALLOWED_PROTOCOLS.has(candidate)) resolved = candidate;
       }
     }
-    return this.parsedUrl.protocol.replace(':', '');
+    this._protocol = resolved ?? this.parsedUrl.protocol.slice(0, -1);
+    return this._protocol;
   }
 
   public get ip(): string | undefined {

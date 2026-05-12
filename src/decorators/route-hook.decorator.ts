@@ -11,5 +11,5 @@ export interface RouteHookOptions {
   error?: unknown;
 }
 
-export const RouteHook = (hooks: RouteHookOptions) =>
+export const RouteHook = (hooks: RouteHookOptions): MethodDecorator =>
   SetMetadata(ELYSIA_ROUTE_HOOK_METADATA, hooks);

@@ -10,5 +10,5 @@ export interface RouteDetailOptions {
   [key: string]: unknown;
 }
 
-export const RouteDetail = (detail: RouteDetailOptions) =>
+export const RouteDetail = (detail: RouteDetailOptions): MethodDecorator =>
   SetMetadata(ELYSIA_ROUTE_DETAIL_METADATA, detail);

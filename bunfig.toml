@@ -1,0 +1,4 @@
+[test]
+timeout = 15000
+coverageReporter = ["lcov", "text"]
+coverageDir = "coverage"

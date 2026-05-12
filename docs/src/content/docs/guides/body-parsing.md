@@ -81,3 +81,36 @@ You can register multiple custom parsers — one per content-type. Combined with
 | `urlencoded` | `application/x-www-form-urlencoded` |
 | `text` | `text/plain` |
 | `raw` | `application/octet-stream` |
+
+## Body size limits
+
+The adapter enforces a global body size limit via `bodyLimit` in the adapter options. The check runs on every request — not only on raw-body or custom-parser paths.
+
+```ts
+const app = await NestFactory.create<NestElysiaApplication>(
+  AppModule,
+  new ElysiaAdapter({ bodyLimit: 5 * 1024 * 1024 }), // 5 MiB
+);
+```
+
+Enforcement happens in two layers:
+
+1. **Pre-parse Content-Length check.** Requests with a `Content-Length` header above the limit are rejected with `413 Payload Too Large` before the body is read.
+2. **Streaming guard on raw/custom parser paths.** When the body is buffered for `rawBody`/`useBodyParser`, the adapter aborts the read as soon as the cumulative byte count exceeds the limit, even if the client lied about Content-Length or used chunked transfer-encoding.
+
+Defaults to **1 MiB**. Set `bodyLimit: 0` to disable the check.
+
+### Per-content-type overrides
+
+Override the global limit for a specific content-type via `useBodyParser`:
+
+```ts
+app.useBodyParser('application/json', { bodyLimit: 32 * 1024 });   // 32 KiB for JSON
+app.useBodyParser('application/octet-stream', { bodyLimit: 50 * 1024 * 1024 }); // 50 MiB for raw uploads
+```
+
+The per-type limit applies before the global limit when the request's content-type matches.
+
+:::caution[Production reverse proxies]
+A real HTTP client (browser, curl, fetch) always sends `Content-Length` for fixed-size bodies, so the pre-parse check catches the most common DoS vectors. For chunked uploads without `Content-Length`, configure your reverse proxy (nginx `client_max_body_size`, Cloudflare upload limits) as the first line of defense, and rely on the adapter's streaming guard when you opt into `rawBody`/custom parsers.
+:::

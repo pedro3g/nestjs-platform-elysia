@@ -116,6 +116,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private globalRawBody = false;
   private rawBodyTypes = new Set<string>();
   private customParsers = new Map<string, BodyParserHandler>();
+  private readonly perTypeBodyLimits = new Map<string, number>();
   private parseHookInstalled = false;
   private bodyLimit = DEFAULT_BODY_LIMIT_BYTES;
   private warnedAboutReflect = false;
@@ -143,6 +144,11 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     super(elysia);
 
     this.trustProxy = ElysiaAdapter.resolveTrustProxy(trustProxyOpt);
+    if (trustProxyOpt === true && process.env.NODE_ENV === 'production') {
+      this.logger.warn(
+        'trustProxy: true accepts the leftmost X-Forwarded-For entry, which is client-controlled. Only use this when every hop in front of the server overwrites X-Forwarded-For. Prefer trustProxy: <number> (Express hop count) or a custom resolver in production.',
+      );
+    }
     if (typeof bodyLimitOpt === 'number' && bodyLimitOpt >= 0 && Number.isFinite(bodyLimitOpt)) {
       this.bodyLimit = bodyLimitOpt;
     }
@@ -163,7 +169,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     if (typeof opt === 'number' && Number.isFinite(opt) && opt > 0) {
       const hops = Math.floor(opt);
       return (forwardedFor) => {
-        const idx = forwardedFor.length - hops;
+        const idx = forwardedFor.length - hops - 1;
         return idx >= 0 ? forwardedFor[idx] : forwardedFor[0];
       };
     }
@@ -181,7 +187,7 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
 
   public override async init(): Promise<void> {
     this.installErrorBridge();
-    this.installNotFoundBridge();
+    this.installBodyLimitGuard();
     this.installMiddlewareDispatcher();
   }
 
@@ -442,19 +448,40 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   public useBodyParser(
     type: string | string[],
     rawBody?: boolean,
-    _options?: NestElysiaBodyParserOptions,
+    options?: NestElysiaBodyParserOptions,
     parser?: BodyParserHandler,
   ): this {
+    const opts = options ?? {};
+    const wantsRawBody = rawBody === true || opts.rawBody === true || opts.parseAs === 'buffer';
+
     const types = Array.isArray(type) ? type : [type];
     for (const t of types) {
       const normalized = normalizeContentType(t);
-      if (rawBody) this.rawBodyTypes.add(normalized);
+      if (wantsRawBody) this.rawBodyTypes.add(normalized);
       if (parser) this.customParsers.set(normalized, parser);
+      if (typeof opts.bodyLimit === 'number' && Number.isFinite(opts.bodyLimit)) {
+        this.perTypeBodyLimits.set(normalized, Math.max(0, Math.floor(opts.bodyLimit)));
+      }
     }
     if (this.rawBodyTypes.size > 0 || this.customParsers.size > 0 || this.globalRawBody) {
       this.installParseHook();
     }
     return this;
+  }
+
+  private installBodyLimitGuard(): void {
+    this.app.onRequest((ctx: { request: Request }) => {
+      const declared = ctx.request.headers.get('content-length');
+      if (declared === null) return;
+      const n = Number(declared);
+      if (!Number.isFinite(n)) return;
+      const contentType = ctx.request.headers.get('content-type') ?? '';
+      const type = normalizeContentType(contentType);
+      const limit = this.perTypeBodyLimits.get(type) ?? this.bodyLimit;
+      if (limit > 0 && n > limit) {
+        throw new BodyTooLargeError(limit);
+      }
+    });
   }
 
   private installParseHook(): void {
@@ -467,9 +494,20 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
       const useBodyParserNarrowed = this.rawBodyTypes.size > 0;
       const wantsRawBody = useBodyParserNarrowed ? this.rawBodyTypes.has(type) : this.globalRawBody;
 
+      const effectiveLimit = this.perTypeBodyLimits.get(type) ?? this.bodyLimit;
+      if (effectiveLimit > 0) {
+        const declared = ctx.request.headers.get('content-length');
+        if (declared !== null) {
+          const n = Number(declared);
+          if (Number.isFinite(n) && n > effectiveLimit) {
+            throw new BodyTooLargeError(effectiveLimit);
+          }
+        }
+      }
+
       if (!customParser && !wantsRawBody) return undefined;
 
-      const buffer = await this.readBodyWithLimit(ctx.request);
+      const buffer = await this.readBodyWithLimit(ctx.request, effectiveLimit);
       (ctx.request as Request & { rawBody?: Buffer }).rawBody = buffer;
 
       if (customParser) {
@@ -480,16 +518,17 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     });
   }
 
-  private async readBodyWithLimit(request: Request): Promise<Buffer> {
-    const limit = this.bodyLimit;
+  private async readBodyWithLimit(request: Request, limitOverride?: number): Promise<Buffer> {
+    const limit = limitOverride ?? this.bodyLimit;
     if (limit <= 0) {
       return Buffer.from(await request.arrayBuffer());
     }
     const contentLength = request.headers.get('content-length');
     if (contentLength !== null) {
       const declared = Number(contentLength);
-      if (Number.isFinite(declared) && declared > limit) {
-        throw new BodyTooLargeError(limit);
+      if (Number.isFinite(declared)) {
+        if (declared > limit) throw new BodyTooLargeError(limit);
+        if (declared >= 0) return Buffer.from(await request.arrayBuffer());
       }
     }
     if (!request.body) return Buffer.alloc(0);
@@ -533,14 +572,16 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   }
 
   public enableCors(options?: unknown): unknown {
+    let cors: (opts?: unknown) => unknown;
     try {
-      const { cors } = require('@elysiajs/cors');
-      this.app.use(cors(options));
-    } catch (_err) {
+      ({ cors } = require('@elysiajs/cors') as { cors: typeof cors });
+    } catch (err) {
       throw new Error(
         '@elysiajs/cors is not installed. Run `bun add @elysiajs/cors` to enable CORS.',
+        { cause: err },
       );
     }
+    this.app.use(cors(options));
     return this;
   }
 
@@ -583,8 +624,15 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   }
 
   private registerRoute(method: HttpMethodUpper, args: unknown[]): unknown {
-    const path = (args.length >= 2 ? args[0] : '/') as string | RegExp;
-    const handler = (args.length >= 2 ? args[1] : args[0]) as VersionedHandlerEntry['handler'];
+    const [first, second] = args;
+    const hasExplicitPath = typeof first === 'string' || first instanceof RegExp;
+    const path = (hasExplicitPath ? first : '/') as string | RegExp;
+    const handler = (hasExplicitPath ? second : first) as VersionedHandlerEntry['handler'];
+    if (typeof handler !== 'function') {
+      throw new TypeError(
+        `Route handler for ${method} ${String(path)} must be a function, got ${typeof handler}`,
+      );
+    }
     const normalizedPath = normalizePath(path);
     const key = METHOD_KEY(method, normalizedPath);
 
@@ -689,18 +737,15 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
   private installErrorBridge(): void {
     this.app.onError(async (ctx: unknown) => {
       const c = ctx as { error: unknown; code: string; request: Request; set: { status?: number } };
-      const innerError = (c.error as { cause?: unknown })?.cause ?? c.error;
-      if (
-        c.error instanceof BodyTooLargeError ||
-        innerError instanceof BodyTooLargeError ||
-        (typeof c.error === 'object' &&
-          c.error !== null &&
-          (c.error as { name?: string }).name === 'BodyTooLargeError')
-      ) {
-        return new Response(JSON.stringify({ statusCode: 413, message: 'Payload Too Large' }), {
-          status: 413,
-          headers: { 'content-type': 'application/json' },
-        });
+      if (isBodyTooLargeError(c.error)) {
+        return new Response(
+          JSON.stringify({
+            statusCode: 413,
+            message: 'Payload Too Large',
+            error: 'Payload Too Large',
+          }),
+          { status: 413, headers: { 'content-type': 'application/json' } },
+        );
       }
       if (c.code === 'NOT_FOUND' && this.notFoundHandler) {
         const elysiaCtx = c as unknown as ConstructorParameters<typeof ElysiaRequest>[0];
@@ -720,12 +765,28 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
         await Promise.resolve(this.errorHandler(c.error, req, reply));
         return reply._toResponse();
       }
-      return undefined;
+      this.logger.error('Unhandled error reached error bridge', this.stackOf(c.error));
+      return new Response(
+        JSON.stringify({
+          statusCode: 500,
+          message: 'Internal Server Error',
+          error: 'Internal Server Error',
+        }),
+        { status: 500, headers: { 'content-type': 'application/json' } },
+      );
     });
   }
 
-  private installNotFoundBridge(): void {
-    // 404s in Elysia surface as code === 'NOT_FOUND' inside onError, handled above.
+  private stackOf(err: unknown): string | undefined {
+    if (err instanceof Error) return err.stack ?? err.message;
+    if (typeof err === 'object' && err !== null) {
+      try {
+        return JSON.stringify(err);
+      } catch {
+        return String(err);
+      }
+    }
+    return String(err);
   }
 
   private installMiddlewareDispatcher(): void {
@@ -735,43 +796,50 @@ export class ElysiaAdapter extends AbstractHttpAdapter<unknown, ElysiaRequest, E
     this.app.onBeforeHandle(async (ctx: unknown) => {
       if (this.middlewares.length === 0) return undefined;
 
-      const elysiaCtx = ctx as ConstructorParameters<typeof ElysiaRequest>[0];
-      const req = this.wrapRequest(elysiaCtx);
-      const reply = new ElysiaReply(elysiaCtx);
-      const path = req.path;
-      const methodName = req.method.toUpperCase();
+      const elysiaCtx = ctx as ConstructorParameters<typeof ElysiaRequest>[0] & {
+        path: string;
+        request: { method: string };
+      };
+      const path = elysiaCtx.path;
+      const methodName = elysiaCtx.request.method.toUpperCase();
 
       const matched = this.middlewares.filter((m) => {
         if (m.methodStr !== 'ALL' && m.methodStr !== methodName) return false;
         return m.matcher.test(path);
       });
+      if (matched.length === 0) return undefined;
+
+      const req = this.wrapRequest(elysiaCtx);
+      const reply = new ElysiaReply(elysiaCtx);
 
       for (const mw of matched) {
         let nextCalled = false;
         let nextErr: unknown;
+        let settled = false;
         await new Promise<void>((resolve) => {
-          const next = (err?: unknown) => {
-            nextCalled = true;
+          const settle = (err?: unknown): void => {
+            if (settled) return;
+            settled = true;
             nextErr = err;
             resolve();
+          };
+          const next = (err?: unknown): void => {
+            nextCalled = true;
+            settle(err);
           };
           try {
             const result = mw.callback(req, reply, next);
             if (result instanceof Promise) {
-              result
-                .then(() => !nextCalled && resolve())
-                .catch((err) => {
-                  nextErr = err;
-                  resolve();
-                });
-            } else if (!nextCalled && reply.sent) {
-              resolve();
-            } else if (!nextCalled) {
-              setImmediate(() => resolve());
+              result.then(() => settle(), settle);
+            } else if (reply.sent || nextCalled) {
+              settle();
             }
+            // Otherwise: middleware is sync and did not call next nor respond.
+            // Treat as "continue" (Express convention) — settle on next tick to
+            // avoid hangs from user bugs while keeping ordering deterministic.
+            else queueMicrotask(() => settle());
           } catch (err) {
-            nextErr = err;
-            resolve();
+            settle(err);
           }
         });
 
@@ -806,13 +874,21 @@ class HttpServerProxy extends EventEmitter {
   private _listening = false;
   private _address: { port: number; address: string } | null = null;
 
+  constructor() {
+    super();
+    // Pre-register a noop error listener so `emit('error', ...)` does not
+    // crash the process before user code attaches its own listener.
+    this.on('error', () => {});
+  }
+
   public get listening(): boolean {
     return this._listening;
   }
 
   public address(): { port: number; address: string; family: string } | null {
     if (!this._address) return null;
-    return { ...this._address, family: 'IPv4' };
+    const isIPv6 = this._address.address.includes(':');
+    return { ...this._address, family: isIPv6 ? 'IPv6' : 'IPv4' };
   }
 
   public markListening(addr: { port: number; address: string }): void {
@@ -841,6 +917,14 @@ function isElysiaNativeError(code: string): boolean {
   );
 }
 
+function isBodyTooLargeError(err: unknown): boolean {
+  if (err instanceof BodyTooLargeError) return true;
+  if (typeof err !== 'object' || err === null) return false;
+  if ((err as { name?: string }).name === 'BodyTooLargeError') return true;
+  const cause = (err as { cause?: unknown }).cause;
+  return cause instanceof BodyTooLargeError;
+}
+
 function methodEnumToString(method: RequestMethod): HttpMethodUpper {
   switch (method) {
     case RequestMethod.GET:
@@ -857,6 +941,8 @@ function methodEnumToString(method: RequestMethod): HttpMethodUpper {
       return 'OPTIONS';
     case RequestMethod.HEAD:
       return 'HEAD';
+    case RequestMethod.ALL:
+      return 'ALL';
     default:
       return 'ALL';
   }

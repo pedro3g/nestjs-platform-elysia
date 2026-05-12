@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Body limit is now enforced on the default parser path.** Previously, `new ElysiaAdapter({ bodyLimit: 1024 })` was silently a no-op unless `rawBody` or a custom parser was registered — Elysia's default parser would buffer bodies of any size. The limit is now applied via an `onRequest` Content-Length guard on every request, plus the existing streaming guard for raw/custom parser paths.
+- **`trustProxy: <number>` now matches Express's hop-count semantics.** Previously `trustProxy: 1` returned the *rightmost* X-Forwarded-For entry (the immediate proxy address), opposite of Express. It now returns the entry one hop to the left of the rightmost trusted hop. This is a breaking change for anyone relying on the inverted behavior; migrating from Express now requires no semantics translation.
+- **`trustProxy: true` warns in production.** The leftmost X-Forwarded-For entry is client-controlled and only safe when every hop in front of the server overwrites the header. The adapter now logs a warning at startup when `trustProxy: true` is used with `NODE_ENV=production`.
+- **`X-Forwarded-Host` regex tightened.** The strict-host validator now rejects malformed structures (consecutive dots, leading/trailing dots, single-character TLDs, ports outside `1–65535`) that the old loose pattern accepted. Falls back to the URL host when the header is invalid.
+- **WebSocket handler errors are no longer silently swallowed.** Synchronous exceptions thrown by `@SubscribeMessage` handlers, guards, pipes, or interceptors now route through NestJS's WS exception filter chain and back to the client. Compatibility with `BaseWsExceptionFilter` is provided through a new `ElysiaWsClient.emit()` method.
+- **WebSocket inbound payloads get a depth/key-count guard.** Defaults: `maxJsonDepth: 32`, `maxJsonKeys: 1024`. Payloads that exceed either are dropped with a `Payload too complex` envelope before `JSON.parse` runs, preventing parse-cost amplification DoS within the size limit.
+- **WebSocket size check uses precise UTF-8 byte counting.** The old `raw.length * 4` upper bound over-rejected ASCII payloads by 4×. The fast path now uses `raw.length` for short-circuit and `Buffer.byteLength(raw, 'utf-8')` only when the cheap check is ambiguous.
+- **`exposeErrorMessages` now accepts a sanitizer callback.** `(err) => string` lets you decide per-error which messages to surface — safer than the binary `true`/`false` toggle.
+- **`BodyTooLargeError` response now includes the `error` field** to match NestJS's standard envelope shape (`{statusCode, message, error}`).
+- **Error bridge no longer falls through to Elysia's raw renderer** when `errorHandler` is unset. Returns a sanitized `500 Internal Server Error` JSON envelope and logs the original error server-side, so pre-init errors and middleware throws don't leak `Error.message` / stack traces to the client.
+
+### Added
+
+- `useBodyParser(type, options?, parser?)` now reads `bodyLimit` and `rawBody` from the options object (in addition to the legacy `(type, rawBody, options, parser)` form NestJS uses internally), enabling per-content-type body limits via `app.useBodyParser('application/json', { bodyLimit: 32 * 1024 })`.
+- New WebSocket helpers in `test/helpers/create-ws-app.ts` (`createWsApp`, `connectWs`, `listenForMessage`) that wrap the bootstrap + port binding pattern, with a `try/finally` guard so failed bootstraps don't leak sockets.
+- `bunfig.toml` with explicit test timeout (15 s) and coverage reporter configuration.
+- `test:security` and `test:coverage` scripts in `package.json`.
+- New coverage for previously untested scenarios: VersioningType.CUSTOM, MEDIA_TYPE with reordered Accept parameters, explicit-unknown-version → 404, handlers throwing non-Error values, redirect preserving Set-Cookie headers, WS oversized envelope, WS handler throw via `WsException`, `exposeErrorMessages` sanitizer callback, WS JSON depth guard.
+
+### Changed
+
+- Pinned Bun to `1.3.13` in all CI workflows (`ci.yml`, `release.yml`, `docs.yml`) instead of `latest`. Added `actions/cache@v4` for `~/.bun/install/cache` keyed by `bun.lock`.
+- CI now runs `bun test --coverage --coverage-reporter=lcov` and uploads to Codecov (no fail-on-error to keep CI green during early adoption).
+- `enableCors()` no longer masks `cors()` configuration errors as "not installed" — the underlying error is preserved via `Error.cause` and only the require failure produces the install-hint message.
+- `HttpServerProxy` pre-registers a noop `error` listener so `emit('error', ...)` from `listen()` failures never crashes the process before user code attaches.
+- `HttpServerProxy.address().family` now correctly returns `'IPv6'` for IPv6 hostnames.
+- `MEDIA_TYPE` versioning parser now finds the version key in any position of the Accept header, not only the second `;`-delimited parameter. Previously `Accept: application/json; charset=utf-8; v=1` silently returned `VERSION_NEUTRAL`.
+- `registerRoute()` validates that the handler argument is a function and throws a clear `TypeError` with the method+path on misuse, instead of crashing opaquely at dispatch time.
+- `methodEnumToString` is now exhaustive over `RequestMethod` — the `ALL` enum value is matched explicitly.
+- `ElysiaRequest.url`, `.hostname`, and `.protocol` are memoized per request — NestJS core reads these multiple times per request (router, guards, interceptors), and the repeated regex tests / string concatenations are now done once.
+- Middleware dispatcher's per-request wrappers (`ElysiaRequest`, `ElysiaReply`) are only allocated when at least one registered middleware matches the request path. Requests that don't trigger any middleware skip the allocation entirely.
+- Middleware dispatcher race condition fixed: the per-middleware `Promise` is now resolved exactly once via a `settled` guard. Previously, an async middleware that called `next()` *and* returned a Promise could resolve twice and clobber `nextErr` non-deterministically.
+- Public API surface tightened ahead of 1.0: `src/index.ts`, `src/adapters/index.ts`, `src/interfaces/index.ts`, and `src/decorators/index.ts` now use explicit named exports instead of `export *`. Internal-only types (`RawElysiaWs`, `BunServerWebSocket`) are no longer re-exported.
+- `@RouteConfig` no longer accepts a `tags` field — it was a silent no-op (Elysia ignores `tags` at the top level of `localHook`). Use `@RouteDetail({ tags: [...] })` for OpenAPI tags.
+- All four route decorators are now typed as `MethodDecorator` to surface mis-application at the class level at compile time.
+- `ElysiaReply._toResponse()` now reconstructs the redirect response with the full `Set-Cookie` / custom header set instead of dropping everything except `Location`. Streaming responses likewise carry the full header bag.
+
+### Types
+
+- `NestElysiaApplication.useBodyParser` signature aligned to NestJS's `(type, options?, parser?)` proxy form (NestJS injects `rawBody` internally before calling the adapter).
+- `versionMatches` short-circuits scalar-vs-scalar comparison without allocating intermediate arrays.
+
 ## [0.1.2] - 2026-05-08
 
 ### Fixed
