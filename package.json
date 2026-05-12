@@ -11,7 +11,7 @@
   "bugs": {
     "url": "https://github.com/pedro3g/nestjs-platform-elysia/issues"
   },
-  "homepage": "https://github.com/pedro3g/nestjs-platform-elysia#readme",
+  "homepage": "https://pedro3g.github.io/nestjs-platform-elysia",
   "publishConfig": {
     "access": "public"
   },
