@@ -1,0 +1,83 @@
+version: 2
+updates:
+  # Root package.json — adapter deps + devDeps
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    ignore:
+      # Peer deps belong to the consumer; never bump the floor automatically.
+      - dependency-name: "@nestjs/*"
+        dependency-type: production
+      - dependency-name: elysia
+        dependency-type: production
+      - dependency-name: rxjs
+        dependency-type: production
+      - dependency-name: reflect-metadata
+        dependency-type: production
+      - dependency-name: typescript
+        dependency-type: production
+
+  # Docs site (Astro Starlight) lives in its own workspace.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docs
+    commit-message:
+      prefix: chore(docs-deps)
+      include: scope
+    groups:
+      astro-stack:
+        patterns:
+          - astro
+          - "@astrojs/*"
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions used by ci.yml, release.yml, docs.yml.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: chore(ci)
+    groups:
+      actions:
+        patterns:
+          - "*"

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-12
+
 ### Security
 
 - **Body limit is now enforced on the default parser path.** Previously, `new ElysiaAdapter({ bodyLimit: 1024 })` was silently a no-op unless `rawBody` or a custom parser was registered — Elysia's default parser would buffer bodies of any size. The limit is now applied via an `onRequest` Content-Length guard on every request, plus the existing streaming guard for raw/custom parser paths.
